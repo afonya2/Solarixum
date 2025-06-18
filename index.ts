@@ -4,12 +4,19 @@ import crypto from 'crypto';
 import url from 'url'
 import fs from 'fs';
 import path from 'path';
+import { MongoClient } from 'mongodb'
 
 const VER = '0.1.0';
 const SERV_NAME = 'Secure Chats Server';
 const PROT_VER = '0.1.0';
 const PROT_NAME = 'Secure Chats Protocol';
 const config = JSON.parse(fs.readFileSync('config.json', 'utf8'));
+
+const dbClient = new MongoClient(`mongodb://${encodeURIComponent(config.db.user)}:${encodeURIComponent(config.db.password)}@${config.db.host}:${config.db.port}/`, {
+    tls: true,
+    tlsInsecure: true,
+})
+const db = dbClient.db(config.db.database);
 
 function sendResponse(ok: boolean, data: any, error?: string) {
     let res: any = {
@@ -22,9 +29,19 @@ function sendResponse(ok: boolean, data: any, error?: string) {
     return JSON.stringify(res)
 }
 
+function generateRandomString(length) {
+    const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    let result = '';
+    for (let i = 0; i < length; i++) {
+        result += characters.charAt(Math.floor(Math.random() * characters.length));
+    }
+    return result;
+}
+
 const httpServer = http.createServer((req, res) => {
-    let clearUrl = req.url?.split('?')[0];
-    let args = url.parse(req.url || "", true).query;
+    const clearUrl = req.url?.split('?')[0];
+    const args = url.parse(req.url || "", true).query;
+    const ip = req.socket.remoteAddress
     if (clearUrl == "/version") {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(sendResponse(true, {
@@ -61,8 +78,59 @@ const httpServer = http.createServer((req, res) => {
             res.writeHead(200, { 'Content-Type': 'text/text', 'cache-control': 'max-age=86400' });
             res.end(content);
         }
-    } else if (clearUrl == "/api/register") {
-        
+    } else if (clearUrl == "/api/register" && req.method === 'POST') {
+        let body = '';
+        req.on('data', async (data) => {
+            body += data.toString();
+        })
+        req.on('end', async () => {
+            let parsedBody: any;
+            try {
+                parsedBody = JSON.parse(body);
+            } catch (e) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid JSON"));
+                return;
+            }
+            if (parsedBody.username == undefined || typeof parsedBody.username != "string" || parsedBody.username.length < 5 || parsedBody.username.length > 32) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid username"));
+                return;
+            }
+            if (parsedBody.password == undefined || typeof parsedBody.password != "string") {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid password"));
+                return;
+            }
+            if (parsedBody.privateKey == undefined || typeof parsedBody.privateKey != "string") {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid private key"));
+                return;
+            }
+            const collection = db.collection("users");
+            let existingUser = await collection.findOne({ username: parsedBody.username });
+            if (existingUser) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Username already exists"));
+                return;
+            }
+            let token = generateRandomString(32);
+            collection.insertOne({
+                username: parsedBody.username,
+                password: crypto.createHash('sha256').update(parsedBody.password).digest('hex'),
+                privateKey: parsedBody.privateKey,
+                createdAt: new Date(),
+                lastLogin: new Date(),
+                lastIP: ip,
+                token: token,
+                suspended: false
+            })
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(sendResponse(true, {
+                username: parsedBody.username,
+                token: token
+            }));
+        })
     } else {
         res.writeHead(404, { 'Content-Type': 'application/json' });
         res.end(sendResponse(false, null, "Not Found"));
