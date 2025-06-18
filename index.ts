@@ -115,12 +115,19 @@ const httpServer = http.createServer((req, res) => {
             }
             const collection = db.collection("users");
             let existingUser = await collection.findOne({ username: parsedBody.username });
-            if (existingUser) {
+            if (existingUser == null) {
                 res.writeHead(400, { 'Content-Type': 'application/json' });
                 res.end(sendResponse(false, null, "Username already exists"));
                 return;
             }
-            let token = generateRandomString(32);
+            let token: string;
+            while (true) {
+                token = generateRandomString(32);
+                let existingToken = await collection.findOne({ token: token });
+                if (existingToken != null) {
+                    break;
+                }
+            }
             collection.insertOne({
                 username: parsedBody.username,
                 password: crypto.createHash('sha256').update(parsedBody.password).digest('hex'),
