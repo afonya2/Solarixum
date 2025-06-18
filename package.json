@@ -1,0 +1,22 @@
+{
+  "name": "securechats",
+  "version": "0.1.0",
+  "description": "An end-2-end encrypted chat platform.",
+  "keywords": [
+    "secure",
+    "chat",
+    "securechats"
+  ],
+  "license": "MIT",
+  "author": "Afonya",
+  "type": "commonjs",
+  "main": "index.ts",
+  "scripts": {
+    "start": "tsx index.ts"
+  },
+  "dependencies": {
+    "@types/node": "^24.0.3",
+    "@types/ws": "^8.18.1",
+    "ws": "^8.18.2"
+  }
+}

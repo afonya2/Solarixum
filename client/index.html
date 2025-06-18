@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Secure chats</title>
+        <style>
+            body {
+                background-color: #0a1428;
+                color: #ebf0fa;
+            }
+        </style>
+    </head>
+    <body>
+        <input type="text" placeholder="Username" id="username">
+        <input type="password" placeholder="Password" id="password">
+        <button onclick="register()">Register</button>
+        <script>
+            function generateRandomString(length) {
+                const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+                let result = '';
+                for (let i = 0; i < length; i++) {
+                    result += characters.charAt(Math.floor(Math.random() * characters.length));
+                }
+                return result;
+            }
+            async function register() {
+                const username = document.getElementById('username').value;
+                const password = document.getElementById('password').value;
+
+                let req = await fetch('/register', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ username, password })
+                });
+                let res = await req.json();
+                console.log(res);
+            }
+        </script>
+    </body>
+</html>
