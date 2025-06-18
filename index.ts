@@ -41,7 +41,13 @@ function generateRandomString(length) {
 const httpServer = http.createServer((req, res) => {
     const clearUrl = req.url?.split('?')[0];
     const args = url.parse(req.url || "", true).query;
-    const ip = req.socket.remoteAddress
+    let ip = req.socket.remoteAddress
+    if (ip == "::1") {
+        ip = "127.0.0.1"
+    }
+    if (req.headers['x-forwarded-for'] != undefined && config.trustedProxies.includes(ip)) {
+        ip = req.headers['x-forwarded-for'] as string;
+    }
     if (clearUrl == "/version") {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(sendResponse(true, {
