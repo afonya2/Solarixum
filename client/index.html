@@ -35,6 +35,11 @@
         <input type="text" placeholder="Room ID" id="roomid2">
         <input type="password" placeholder="Password" id="readPass">
         <button onclick="readMessages()">Read Messages</button>
+        <hr>
+        <input type="text" placeholder="Room ID" id="roomid3">
+        <input type="text" placeholder="Username" id="targetUser">
+        <input type="password" placeholder="Password" id="invitePass">
+        <button onclick="inviteUser()">Invite user</button>
         <script>
             const PROT_NAME = 'Solarixum Protocol';
             const PROT_VER = '0.1.0';
@@ -390,6 +395,92 @@
                     });
                 }
                 console.log("Messages:", messages);
+            }
+            async function inviteUser() {
+                const roomId = document.getElementById('roomid3').value;
+                const targetUser = document.getElementById('targetUser').value;
+                const password = document.getElementById('invitePass').value;
+                const token = localStorage.getItem("token");
+                if (!token) {
+                    console.error("No token found in local storage.");
+                    return;
+                }
+                const privateKey = await decryptPrivateKey(password)
+                if (!privateKey) {
+                    console.error("Failed to decrypt private key.");
+                    return;
+                }
+
+                let req1 = await fetch(`/api/room/getKey?roomId=${encodeURIComponent(roomId)}`, {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': token,
+                        'protocol': PROT_NAME,
+                        'protocol-version': PROT_VER
+                    }
+                });
+                let res1 = await req1.json();
+                if (!res1.ok) {
+                    console.error("Failed to get room:", res1.error);
+                    return;
+                }
+                console.log(res1);
+
+                let decryptedKey = await crypto.subtle.decrypt({
+                    name: "RSA-OAEP"
+                }, privateKey, base64ToArray(res1.body.key));
+                let decryptedIv = await crypto.subtle.decrypt({
+                    name: "RSA-OAEP"
+                }, privateKey, base64ToArray(res1.body.iv));
+
+                let req2 = await fetch(`/api/user/getKey?username=${encodeURIComponent(targetUser)}`, {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': token,
+                        'protocol': PROT_NAME,
+                        'protocol-version': PROT_VER
+                    }
+                });
+                let res2 = await req2.json();
+                if (!res2.ok) {
+                    console.error("Failed to get user:", res2.error);
+                    return;
+                }
+                console.log(res2);
+
+                const targetKey = base64ToData(res2.body.publicKey);
+                const targetKeyBuffer = await crypto.subtle.importKey("spki", targetKey, {
+                    name: "RSA-OAEP",
+                    hash: "SHA-256"
+                }, false, ["encrypt"]);
+                let encryptedRoomKey = await crypto.subtle.encrypt({
+                    name: "RSA-OAEP"
+                }, targetKeyBuffer, decryptedKey);
+                let encryptedIv = await crypto.subtle.encrypt({
+                    name: "RSA-OAEP"
+                }, targetKeyBuffer, decryptedIv);
+
+                let req3 = await fetch('/api/room/invite', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        token,
+                        roomId,
+                        username: targetUser,
+                        key: dataToBase64(encryptedRoomKey),
+                        iv: dataToBase64(encryptedIv),
+                        protocol: PROT_NAME,
+                        protocolVersion: PROT_VER
+                    })
+                });
+                let res3 = await req3.json();
+                if (!res3.ok) {
+                    console.error("Failed to invite user:", res3.error);
+                    return;
+                }
+                console.log(res3);
             }
         </script>
     </body>
