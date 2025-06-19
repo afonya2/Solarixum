@@ -25,10 +25,11 @@
             return;
         }
         console.log(res);
+        localStorage.setItem("password", password.value);
 
         let key;
         try {
-            key = await utils.decryptPrivateKey(password.value);
+            key = await utils.decryptPrivateKey();
             if (!key) {
                 alertMsg.value = "Failed to decrypt private key. Recovery needed!";
                 alerthidden.value = false;
@@ -54,7 +55,7 @@
                 utils.base64ToArray(res.body.encryptedKeyVerifier)
             );
             if (new TextDecoder().decode(decryptedKeyVerifier) == res.body.keyVerifier) {
-                localStorage.setItem("state", "7")
+                localStorage.setItem("state", "4")
                 window.location.href = ""
             } else {
                 alertMsg.value = "Key verifier mismatch. Recovery needed!";
@@ -79,9 +80,9 @@
             <div class="flex flex-col gap-2">
                 <Message severity="error" :hidden="alerthidden">{{ alertMsg }}</Message>
                 <label for="username">Username</label>
-                <InputText type="text" placeholder="Username" style="margin-block: 5px;" v-model="username" />
+                <InputText type="text" name="username" placeholder="Username" style="margin-block: 5px;" v-model="username" />
                 <label for="password">Password</label>
-                <InputText type="password" placeholder="Password" style="margin-block: 5px;" v-model="password" />
+                <InputText type="password" name="password" placeholder="Password" style="margin-block: 5px;" v-model="password" />
                 <a href="javascript:alert('skill issue')">Forgot your password?</a>
                 <Button style="float: right;margin-top: 5px;" @click="login()">Log in</Button>
             </div>

@@ -1,3 +1,6 @@
+const PROT_NAME = 'Solarixum Protocol';
+const PROT_VER = '0.1.0';
+
 function generateRandomString(length: number): string {
     const characters = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
     let result = "";
@@ -36,10 +39,15 @@ async function derivePasswordKey(password: string): Promise<CryptoKey> {
     const hash = await crypto.subtle.digest("SHA-256", encoder.encode(password));
     return await crypto.subtle.importKey("raw", hash, { name: "AES-CBC" }, false, ["encrypt", "decrypt"]);
 }
-async function decryptPrivateKey(password: string): Promise<CryptoKey | null> {
+async function decryptPrivateKey(): Promise<CryptoKey | null> {
     let key = localStorage.getItem("privateKey");
+    let password = localStorage.getItem("password");
     if (!key) {
         console.error("No private key found in local storage.");
+        return null;
+    }
+    if (!password) {
+        console.error("No password hash found in local storage.");
         return null;
     }
     let iv = await passwordToIV(password);
@@ -57,6 +65,53 @@ async function decryptPrivateKey(password: string): Promise<CryptoKey | null> {
         "decrypt",
     ]);
 }
+async function encryptPrivateKey(key: CryptoKey) {
+    let password = localStorage.getItem("password");
+    if (!key) {
+        console.error("No private key found in local storage.");
+        return null;
+    }
+    if (!password) {
+        console.error("No password hash found in local storage.");
+        return null;
+    }
+    let iv = await passwordToIV(password);
+    let keyBuffer = await derivePasswordKey(password);
+    let exportedKey = await crypto.subtle.exportKey("pkcs8", key);
+    let encryptedPrivKey = await crypto.subtle.encrypt(
+        {
+            name: "AES-CBC",
+            iv: iv,
+        },
+        keyBuffer,
+        exportedKey
+    );
+    localStorage.setItem("privateKey", dataToBase64(encryptedPrivKey));
+}
+async function checkLogin(): Promise<{ username: string; createdAt: string } | boolean> {
+    const token = localStorage.getItem("token");
+    if (!token) {
+        return false;
+    }
+    let req = await fetch("/api/me", {
+        method: "GET",
+        headers: {
+            "Content-Type": "application/json",
+            "Authorization": token,
+            "protocol": PROT_NAME,
+            "protocol-version": PROT_VER
+        }
+    })
+    let res = await req.json();
+    if (res.ok) {
+        return {
+            username: res.username,
+            createdAt: res.createdAt
+        };
+    } else {
+        return false;
+    }
+}
 
 export default {
     generateRandomString,
@@ -65,5 +120,7 @@ export default {
     base64ToArray,
     passwordToIV,
     derivePasswordKey,
-    decryptPrivateKey
+    encryptPrivateKey,
+    decryptPrivateKey,
+    checkLogin
 }
