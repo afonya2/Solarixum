@@ -16,7 +16,6 @@
         <input type="password" placeholder="Password" id="password">
         <button onclick="register()">Register</button>
         <hr>
-        <input type="text" placeholder="Token" id="token">
         <input type="text" placeholder="Recovery word" id="recoveryWord">
         <input type="password" placeholder="Password" id="recPass">
         <button onclick="recover()">Recover</button>
@@ -24,6 +23,9 @@
         <input type="text" placeholder="Username" id="loginUsername">
         <input type="password" placeholder="Password" id="loginPassword">
         <button onclick="login()">Login</button>
+        <hr>
+        <input type="text" placeholder="Room name" id="roomname">
+        <button onclick="createRoom()">Create Room</button>
         <script>
             const PROT_NAME = 'Solarixum Protocol';
             const PROT_VER = '0.1.0';
@@ -130,9 +132,13 @@
                 localStorage.setItem("publicKey", publicKeyHex);
             }
             async function recover() {
-                const token = document.getElementById('token').value;
+                const token = localStorage.getItem("token");
                 const recoveryWord = document.getElementById('recoveryWord').value;
                 const password = document.getElementById('recPass').value;
+                if (!token) {
+                    console.error("No token found in local storage.");
+                    return;
+                }
 
                 let req = await fetch('/api/recover', {
                     method: 'POST',
@@ -203,6 +209,45 @@
                     console.error("Key verifier mismatch. Recovery needed!");
                 }
                 localStorage.setItem("token", res.body.token);
+            }
+            async function createRoom() {
+                const roomName = document.getElementById('roomname').value;
+                const token = localStorage.getItem("token");
+                if (!token) {
+                    console.error("No token found in local storage.");
+                    return;
+                }
+
+                let roomKey = generateRandomString(32);
+                let iv = await crypto.getRandomValues(new Uint8Array(16));
+                const publicKey = base64ToData(localStorage.getItem("publicKey"));
+                const keyBuffer = await crypto.subtle.importKey("spki", publicKey, {
+                    name: "RSA-OAEP",
+                    hash: "SHA-256"
+                }, false, ["encrypt"]);
+                let encryptedRoomKey = await crypto.subtle.encrypt({
+                    name: "RSA-OAEP"
+                }, keyBuffer, new TextEncoder().encode(roomKey));
+
+                let req = await fetch('/api/room/create', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        token,
+                        roomName,
+                        roomKey: dataToBase64(encryptedRoomKey),
+                        protocol: PROT_NAME,
+                        protocolVersion: PROT_VER
+                    })
+                })
+                let res = await req.json();
+                if (!res.ok) {
+                    console.error("Room creation failed:", res.error);
+                    return;
+                }
+                console.log(res);
             }
         </script>
     </body>

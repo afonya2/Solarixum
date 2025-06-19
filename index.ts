@@ -5,6 +5,7 @@ import url from 'url'
 import fs from 'fs';
 import path from 'path';
 import { MongoClient } from 'mongodb'
+import { ulid } from 'ulid';
 
 const VER = '0.1.0';
 const SERV_NAME = 'Solarixum Server';
@@ -215,7 +216,7 @@ const httpServer = http.createServer((req, res) => {
                 res.end(sendResponse(false, null, "User is suspended"));
                 return;
             }
-            collection.updateOne({ token: parsedBody.token }, { $set: { lastCommunication: new Date() } })
+            collection.updateOne({ token: user.token }, { $set: { lastCommunication: new Date() } })
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(sendResponse(true, {
                 username: user.username,
@@ -283,6 +284,79 @@ const httpServer = http.createServer((req, res) => {
                 token: user.token,
                 keyVerifier: keyVerifier,
                 encryptedKeyVerifier: encryped.toString('base64'),
+            }));
+        })
+    } else if (clearUrl == "/api/room/create" && req.method === 'POST') {
+        let body = '';
+        req.on('data', async (data) => {
+            body += data.toString();
+        })
+        req.on('end', async () => {
+            let parsedBody: any;
+            try {
+                parsedBody = JSON.parse(body);
+            } catch (e) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid JSON"));
+                return;
+            }
+            if (parsedBody.protocol != PROT_NAME) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Unknown protocol"));
+                return
+            }
+            if (parsedBody.protocolVersion != PROT_VER) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Unsupported protocol version"));
+                return;
+            }
+            if (parsedBody.token == undefined || typeof parsedBody.token != "string") {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid token"));
+                return;
+            }
+            if (parsedBody.roomName == undefined || typeof parsedBody.roomName != "string" || parsedBody.roomName.length < 3 || parsedBody.roomName.length > 32) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid room name"));
+                return;
+            }
+            if (parsedBody.roomKey == undefined || typeof parsedBody.roomKey != "string") {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid room key"));
+                return;
+            }
+            const collection = db.collection("users");
+            const user = await collection.findOne({ token: parsedBody.token });
+            if (user == null) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid token"));
+                return;
+            }
+            if (user.suspended) {
+                res.writeHead(403, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "User is suspended"));
+                return;
+            }
+            collection.updateOne({ token: user.token }, { $set: { lastCommunication: new Date() } })
+            const roomsCollection = db.collection("rooms");
+            const keyCollection = db.collection("roomKeys");
+            const roomId = "#"+ulid();
+            roomsCollection.insertOne({
+                id: roomId,
+                name: parsedBody.roomName,
+                owner: user.username,
+                createdAt: new Date(),
+                members: [user.username]
+            })
+            keyCollection.insertOne({
+                user: user.username,
+                roomId: roomId,
+                key: parsedBody.roomKey,
+                createdAt: new Date()
+            })
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(sendResponse(true, {
+                roomId: roomId
             }));
         })
     } else {
