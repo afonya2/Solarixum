@@ -38,6 +38,10 @@ const Preset = definePreset(Aura, {
 });
 
 let app = createApp(Login);
+let state = localStorage.getItem('state');
+if (state == "6") {
+    app = createApp(App);
+}
 
 app.use(PrimeVue, {
     theme: {

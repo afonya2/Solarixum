@@ -77,7 +77,7 @@ const httpServer = http.createServer(async (req, res) => {
             res.end(sendResponse(false, null, "Not Found"));
             return;
         }
-        let content = fs.readFileSync(file, 'utf8');
+        let content = fs.readFileSync(file);
         if (file.endsWith(".html")) {
             res.writeHead(200, { 'Content-Type': 'text/html', 'cache-control': 'max-age=86400' });
             res.end(content);
@@ -86,6 +86,40 @@ const httpServer = http.createServer(async (req, res) => {
             res.end(content);
         } else if (file.endsWith(".css")) {
             res.writeHead(200, { 'Content-Type': 'text/css', 'cache-control': 'max-age=86400' });
+            res.end(content);
+        } else if (file.endsWith(".jpg")) {
+            res.writeHead(200, { 'Content-Type': 'image/jpeg', 'cache-control': 'max-age=86400' });
+            res.end(content);
+        } else if (file.endsWith(".svg")) {
+            res.writeHead(200, { 'Content-Type': 'image/svg+xml', 'cache-control': 'max-age=86400' });
+            res.end(content);
+        } else {
+            res.writeHead(200, { 'Content-Type': 'text/text', 'cache-control': 'max-age=86400' });
+            res.end(content);
+        }
+    } else if (clearUrl?.startsWith("/assets/")) {
+        let pathRemaining = clearUrl.replace("/assets/", "");
+        let file = `./client/assets/${path.normalize(pathRemaining)}`;
+        if (!fs.existsSync(file)) {
+            res.writeHead(404, { 'Content-Type': 'application/json' });
+            res.end(sendResponse(false, null, "Not Found"));
+            return;
+        }
+        let content = fs.readFileSync(file);
+        if (file.endsWith(".html")) {
+            res.writeHead(200, { 'Content-Type': 'text/html', 'cache-control': 'max-age=86400' });
+            res.end(content);
+        } else if (file.endsWith(".js")) {
+            res.writeHead(200, { 'Content-Type': 'application/javascript', 'cache-control': 'max-age=86400' });
+            res.end(content);
+        } else if (file.endsWith(".css")) {
+            res.writeHead(200, { 'Content-Type': 'text/css', 'cache-control': 'max-age=86400' });
+            res.end(content);
+        } else if (file.endsWith(".jpg")) {
+            res.writeHead(200, { 'Content-Type': 'image/jpeg', 'cache-control': 'max-age=86400' });
+            res.end(content);
+        } else if (file.endsWith(".svg")) {
+            res.writeHead(200, { 'Content-Type': 'image/svg+xml', 'cache-control': 'max-age=86400' });
             res.end(content);
         } else {
             res.writeHead(200, { 'Content-Type': 'text/text', 'cache-control': 'max-age=86400' });
