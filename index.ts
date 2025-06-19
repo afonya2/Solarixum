@@ -45,7 +45,7 @@ function base64ToPem(base64: string): string {
     return `-----BEGIN PUBLIC KEY-----\n${lines}\n-----END PUBLIC KEY-----`;
 }
 
-const httpServer = http.createServer((req, res) => {
+const httpServer = http.createServer(async (req, res) => {
     const clearUrl = req.url?.split('?')[0];
     const args = url.parse(req.url || "", true).query;
     let ip = req.socket.remoteAddress
@@ -55,7 +55,7 @@ const httpServer = http.createServer((req, res) => {
     if (req.headers['x-forwarded-for'] != undefined && config.trustedProxies.includes(ip)) {
         ip = req.headers['x-forwarded-for'] as string;
     }
-    if (clearUrl == "/version") {
+    if (clearUrl == "/version" && req.method === 'GET') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(sendResponse(true, {
             protocol: PROT_NAME,
@@ -158,7 +158,7 @@ const httpServer = http.createServer((req, res) => {
                 }
             }
             collection.insertOne({
-                username: parsedBody.username,
+                username: "@"+parsedBody.username,
                 password: crypto.createHash('sha256').update(parsedBody.password).digest('hex'),
                 privateKey: parsedBody.privateKey,
                 publicKey: parsedBody.publicKey,
@@ -260,7 +260,7 @@ const httpServer = http.createServer((req, res) => {
             }
             const collection = db.collection("users");
             const hashedPassword = crypto.createHash('sha256').update(parsedBody.password).digest('hex');
-            const user = await collection.findOne({ username: parsedBody.username, password: hashedPassword });
+            const user = await collection.findOne({ username: "@"+parsedBody.username, password: hashedPassword });
             if (user == null) {
                 res.writeHead(400, { 'Content-Type': 'application/json' });
                 res.end(sendResponse(false, null, "Invalid username or password"));
@@ -325,6 +325,11 @@ const httpServer = http.createServer((req, res) => {
                 res.end(sendResponse(false, null, "Invalid room key"));
                 return;
             }
+            if (parsedBody.iv == undefined || typeof parsedBody.iv != "string") {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid IV"));
+                return;
+            }
             const collection = db.collection("users");
             const user = await collection.findOne({ token: parsedBody.token });
             if (user == null) {
@@ -352,6 +357,7 @@ const httpServer = http.createServer((req, res) => {
                 user: user.username,
                 roomId: roomId,
                 key: parsedBody.roomKey,
+                iv: parsedBody.iv,
                 createdAt: new Date()
             })
             res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -359,6 +365,195 @@ const httpServer = http.createServer((req, res) => {
                 roomId: roomId
             }));
         })
+    } else if (clearUrl == "/api/room/getKey" && req.method == 'GET') {
+        if (req.headers["protocol"] != PROT_NAME) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(sendResponse(false, null, "Unknown protocol"));
+            return;
+        }
+        if (req.headers["protocol-version"] != PROT_VER) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(sendResponse(false, null, "Unsupported protocol version"));
+            return;
+        }
+        if (args.roomId == undefined || typeof args.roomId != "string" || !args.roomId.startsWith("#")) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(sendResponse(false, null, "Invalid room ID"));
+            return;
+        }
+        const collection = db.collection("users");
+        const user = await collection.findOne({ token: req.headers["authorization"] });
+        if (user == null) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(sendResponse(false, null, "Invalid token"));
+            return;
+        }
+        if (user.suspended) {
+            res.writeHead(403, { 'Content-Type': 'application/json' });
+            res.end(sendResponse(false, null, "User is suspended"));
+            return;
+        }
+        collection.updateOne({ token: user.token }, { $set: { lastCommunication: new Date() } })
+        const roomsCollection = db.collection("rooms");
+        const room = await roomsCollection.findOne({ id: decodeURIComponent(args.roomId) });
+        if (room == null) {
+            res.writeHead(404, { 'Content-Type': 'application/json' });
+            res.end(sendResponse(false, null, "Room not found"));
+            return;
+        }
+        if (!room.members.includes(user.username)) {
+            res.writeHead(403, { 'Content-Type': 'application/json' });
+            res.end(sendResponse(false, null, "User is not member of this room"));
+            return;
+        }
+        const keyCollection = db.collection("roomKeys");
+        const key = await keyCollection.findOne({ user: user.username, roomId: args.roomId });
+        if (key == null) {
+            res.writeHead(404, { 'Content-Type': 'application/json' });
+            res.end(sendResponse(false, null, "Room key not found"));
+            return;
+        }
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(sendResponse(true, {
+            roomId: args.roomId,
+            key: key.key,
+            iv: key.iv
+        }));
+    } else if (clearUrl == "/api/room/sendMessage" && req.method === 'POST') {
+        let body = '';
+        req.on('data', async (data) => {
+            body += data.toString();
+        })
+        req.on('end', async () => {
+            let parsedBody: any;
+            try {
+                parsedBody = JSON.parse(body);
+            } catch (e) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid JSON"));
+                return;
+            }
+            if (parsedBody.protocol != PROT_NAME) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Unknown protocol"));
+                return
+            }
+            if (parsedBody.protocolVersion != PROT_VER) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Unsupported protocol version"));
+                return;
+            }
+            if (parsedBody.token == undefined || typeof parsedBody.token != "string") {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid token"));
+                return;
+            }
+            if (parsedBody.roomId == undefined || typeof parsedBody.roomId != "string" || !parsedBody.roomId.startsWith("#")) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid room ID"));
+                return;
+            }
+            if (parsedBody.message == undefined || typeof parsedBody.message != "string") {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid message"));
+                return;
+            }
+            const collection = db.collection("users");
+            const user = await collection.findOne({ token: parsedBody.token });
+            if (user == null) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid token"));
+                return;
+            }
+            if (user.suspended) {
+                res.writeHead(403, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "User is suspended"));
+                return;
+            }
+            const roomsCollection = db.collection("rooms");
+            const room = await roomsCollection.findOne({ id: parsedBody.roomId });
+            if (room == null) {
+                res.writeHead(404, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Room not found"));
+                return;
+            }
+            if (!room.members.includes(user.username)) {
+                res.writeHead(403, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "User is not member of this room"));
+                return;
+            }
+            const messagesCollection = db.collection("messages");
+            let messageId = "$"+ulid();
+            messagesCollection.insertOne({
+                id: messageId,
+                roomId: parsedBody.roomId,
+                user: user.username,
+                message: parsedBody.message,
+                createdAt: new Date()
+            })
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(sendResponse(true, {
+                messageId: messageId,
+                roomId: parsedBody.roomId
+            }));
+        })
+    } else if (clearUrl == "/api/room/readMessages" && req.method == 'GET') {
+        if (req.headers["protocol"] != PROT_NAME) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(sendResponse(false, null, "Unknown protocol"));
+            return;
+        }
+        if (req.headers["protocol-version"] != PROT_VER) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(sendResponse(false, null, "Unsupported protocol version"));
+            return;
+        }
+        if (args.roomId == undefined || typeof args.roomId != "string" || !args.roomId.startsWith("#")) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(sendResponse(false, null, "Invalid room ID"));
+            return;
+        }
+        const collection = db.collection("users");
+        const user = await collection.findOne({ token: req.headers["authorization"] });
+        if (user == null) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(sendResponse(false, null, "Invalid token"));
+            return;
+        }
+        if (user.suspended) {
+            res.writeHead(403, { 'Content-Type': 'application/json' });
+            res.end(sendResponse(false, null, "User is suspended"));
+            return;
+        }
+        collection.updateOne({ token: user.token }, { $set: { lastCommunication: new Date() } })
+        const roomsCollection = db.collection("rooms");
+        const room = await roomsCollection.findOne({ id: decodeURIComponent(args.roomId) });
+        if (room == null) {
+            res.writeHead(404, { 'Content-Type': 'application/json' });
+            res.end(sendResponse(false, null, "Room not found"));
+            return;
+        }
+        if (!room.members.includes(user.username)) {
+            res.writeHead(403, { 'Content-Type': 'application/json' });
+            res.end(sendResponse(false, null, "User is not member of this room"));
+            return;
+        }
+        const messagesCollection = db.collection("messages");
+        const messages = await messagesCollection.find({ roomId: decodeURIComponent(args.roomId) }).toArray();
+        let resMessages: any[] = []
+        for (let i = 0; i < messages.length; i++) {
+            resMessages.push({
+                id: messages[i].id,
+                user: messages[i].user,
+                message: messages[i].message,
+                createdAt: messages[i].createdAt
+            });
+        }
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(sendResponse(true, {
+            roomId: args.roomId,
+            messages: resMessages
+        }));
     } else {
         res.writeHead(404, { 'Content-Type': 'application/json' });
         res.end(sendResponse(false, null, "Not Found"));

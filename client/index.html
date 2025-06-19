@@ -26,6 +26,15 @@
         <hr>
         <input type="text" placeholder="Room name" id="roomname">
         <button onclick="createRoom()">Create Room</button>
+        <hr>
+        <input type="text" placeholder="Room ID" id="roomid">
+        <input type="text" placeholder="Message" id="message">
+        <input type="password" placeholder="Password" id="sendPass">
+        <button onclick="sendMessage()">Send Message</button>
+        <hr>
+        <input type="text" placeholder="Room ID" id="roomid2">
+        <input type="password" placeholder="Password" id="readPass">
+        <button onclick="readMessages()">Read Messages</button>
         <script>
             const PROT_NAME = 'Solarixum Protocol';
             const PROT_VER = '0.1.0';
@@ -228,6 +237,9 @@
                 let encryptedRoomKey = await crypto.subtle.encrypt({
                     name: "RSA-OAEP"
                 }, keyBuffer, new TextEncoder().encode(roomKey));
+                let encryptedIv = await crypto.subtle.encrypt({
+                    name: "RSA-OAEP"
+                }, keyBuffer, iv);
 
                 let req = await fetch('/api/room/create', {
                     method: 'POST',
@@ -238,6 +250,7 @@
                         token,
                         roomName,
                         roomKey: dataToBase64(encryptedRoomKey),
+                        iv: dataToBase64(encryptedIv),
                         protocol: PROT_NAME,
                         protocolVersion: PROT_VER
                     })
@@ -248,6 +261,135 @@
                     return;
                 }
                 console.log(res);
+            }
+            async function sendMessage() {
+                const roomId = document.getElementById('roomid').value;
+                const message = document.getElementById('message').value;
+                const password = document.getElementById('sendPass').value;
+                const token = localStorage.getItem("token");
+                if (!token) {
+                    console.error("No token found in local storage.");
+                    return;
+                }
+                const privateKey = await decryptPrivateKey(password)
+                if (!privateKey) {
+                    console.error("Failed to decrypt private key.");
+                    return;
+                }
+
+                let req1 = await fetch(`/api/room/getKey?roomId=${encodeURIComponent(roomId)}`, {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': token,
+                        'protocol': PROT_NAME,
+                        'protocol-version': PROT_VER
+                    }
+                });
+                let res1 = await req1.json();
+                if (!res1.ok) {
+                    console.error("Failed to get room:", res1.error);
+                    return;
+                }
+                console.log(res1);
+
+                let decryptedKey = await crypto.subtle.decrypt({
+                    name: "RSA-OAEP"
+                }, privateKey, base64ToArray(res1.body.key));
+                let decryptedIv = await crypto.subtle.decrypt({
+                    name: "RSA-OAEP"
+                }, privateKey, base64ToArray(res1.body.iv));
+                const keyBuffer = await crypto.subtle.importKey("raw", decryptedKey, { name: "AES-CBC" }, false, ["encrypt", "decrypt"]);
+                let encryptedMessage = await crypto.subtle.encrypt({
+                    name: "AES-CBC",
+                    iv: decryptedIv
+                }, keyBuffer, new TextEncoder().encode(message));
+
+                let req2 = await fetch('/api/room/sendMessage', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        token,
+                        roomId,
+                        message: dataToBase64(encryptedMessage),
+                        protocol: PROT_NAME,
+                        protocolVersion: PROT_VER
+                    })
+                });
+                let res2 = await req2.json();
+                if (!res2.ok) {
+                    console.error("Failed to send message:", res2.error);
+                    return;
+                }
+                console.log(res2);
+            }
+            async function readMessages() {
+                const roomId = document.getElementById('roomid2').value;
+                const password = document.getElementById('readPass').value;
+                const token = localStorage.getItem("token");
+                if (!token) {
+                    console.error("No token found in local storage.");
+                    return;
+                }
+                const privateKey = await decryptPrivateKey(password)
+                if (!privateKey) {
+                    console.error("Failed to decrypt private key.");
+                    return;
+                }
+
+                let req1 = await fetch(`/api/room/getKey?roomId=${encodeURIComponent(roomId)}`, {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': token,
+                        'protocol': PROT_NAME,
+                        'protocol-version': PROT_VER
+                    }
+                });
+                let res1 = await req1.json();
+                if (!res1.ok) {
+                    console.error("Failed to get room:", res1.error);
+                    return;
+                }
+                console.log(res1);
+
+                let decryptedKey = await crypto.subtle.decrypt({
+                    name: "RSA-OAEP"
+                }, privateKey, base64ToArray(res1.body.key));
+                let decryptedIv = await crypto.subtle.decrypt({
+                    name: "RSA-OAEP"
+                }, privateKey, base64ToArray(res1.body.iv));
+                const keyBuffer = await crypto.subtle.importKey("raw", decryptedKey, { name: "AES-CBC" }, false, ["encrypt", "decrypt"]);
+
+                let req2 = await fetch(`/api/room/readMessages?roomId=${encodeURIComponent(roomId)}`, {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': token,
+                        'protocol': PROT_NAME,
+                        'protocol-version': PROT_VER
+                    }
+                });
+                let res2 = await req2.json();
+                if (!res2.ok) {
+                    console.error("Failed to read messages:", res2.error);
+                    return;
+                }
+                console.log(res2);
+                let messages = []
+                for (let i = 0; i < res2.body.messages.length; i++) {
+                    const message = res2.body.messages[i];
+                    const decryptedMessage = await crypto.subtle.decrypt({
+                        name: "AES-CBC",
+                        iv: decryptedIv
+                    }, keyBuffer, base64ToData(message.message));
+                    messages.push({
+                        id: message.id,
+                        message: new TextDecoder().decode(decryptedMessage),
+                        createdAt: message.createdAt,
+                        user: message.user
+                    });
+                }
+                console.log("Messages:", messages);
             }
         </script>
     </body>
