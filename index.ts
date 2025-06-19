@@ -39,6 +39,10 @@ function generateRandomString(length: number): string {
     }
     return result;
 }
+function base64ToPem(base64: string): string {
+    const lines = base64.match(/.{1,64}/g)?.join('\n') || '';
+    return `-----BEGIN PUBLIC KEY-----\n${lines}\n-----END PUBLIC KEY-----`;
+}
 
 const httpServer = http.createServer((req, res) => {
     const clearUrl = req.url?.split('?')[0];
@@ -217,6 +221,68 @@ const httpServer = http.createServer((req, res) => {
                 username: user.username,
                 privateKey: user.privateKey,
                 publicKey: user.publicKey
+            }));
+        })
+    } else if (clearUrl == "/api/login" && req.method === 'POST') {
+        let body = '';
+        req.on('data', async (data) => {
+            body += data.toString();
+        })
+        req.on('end', async () => {
+            let parsedBody: any;
+            try {
+                parsedBody = JSON.parse(body);
+            } catch (e) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid JSON"));
+                return;
+            }
+            if (parsedBody.protocol != PROT_NAME) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Unknown protocol"));
+                return
+            }
+            if (parsedBody.protocolVersion != PROT_VER) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Unsupported protocol version"));
+                return;
+            }
+            if (parsedBody.username == undefined || typeof parsedBody.username != "string" || parsedBody.username.length < 5 || parsedBody.username.length > 32) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid username"));
+                return;
+            }
+            if (parsedBody.password == undefined || typeof parsedBody.password != "string") {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid password"));
+                return;
+            }
+            const collection = db.collection("users");
+            const hashedPassword = crypto.createHash('sha256').update(parsedBody.password).digest('hex');
+            const user = await collection.findOne({ username: parsedBody.username, password: hashedPassword });
+            if (user == null) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid username or password"));
+                return;
+            }
+            if (user.suspended) {
+                res.writeHead(403, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "User is suspended"));
+                return;
+            }
+            collection.updateOne({ token: user.token }, { $set: { lastCommunication: new Date() } })
+            let keyVerifier = generateRandomString(32);
+            let encryped = crypto.publicEncrypt({
+                key: base64ToPem(user.publicKey),
+                padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
+                oaepHash: 'sha256'
+            }, Buffer.from(keyVerifier));
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(sendResponse(true, {
+                username: user.username,
+                token: user.token,
+                keyVerifier: keyVerifier,
+                encryptedKeyVerifier: encryped.toString('base64'),
             }));
         })
     } else {

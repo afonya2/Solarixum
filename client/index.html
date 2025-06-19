@@ -20,6 +20,10 @@
         <input type="text" placeholder="Recovery word" id="recoveryWord">
         <input type="password" placeholder="Password" id="recPass">
         <button onclick="recover()">Recover</button>
+        <hr>
+        <input type="text" placeholder="Username" id="loginUsername">
+        <input type="password" placeholder="Password" id="loginPassword">
+        <button onclick="login()">Login</button>
         <script>
             const PROT_NAME = 'Solarixum Protocol';
             const PROT_VER = '0.1.0';
@@ -31,11 +35,19 @@
                 }
                 return result;
             }
-            function keyToHex(key) {
-                return Array.from(new Uint8Array(key)).map(b => b.toString(16).padStart(2, '0')).join('')
+            function dataToBase64(data) {
+                return btoa(String.fromCharCode.apply(null, new Uint8Array(data)));
             }
-            function hexToKey(hex) {
-                return new Uint8Array(hex.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
+            function base64ToData(base64) {
+                return new Uint8Array(atob(base64).split('').map(c => c.charCodeAt(0)));
+            }
+            function base64ToArray(base64) {
+                const binary = atob(base64);
+                const bytes = new Uint8Array(binary.length);
+                for (let i = 0; i < binary.length; i++) {
+                    bytes[i] = binary.charCodeAt(i);
+                }
+                return bytes.buffer; // ← this is key!
             }
             async function passwordToIV(password) {
                 const encoder = new TextEncoder();
@@ -53,6 +65,22 @@
                     ['encrypt', 'decrypt']
                 );
             }
+            async function decryptPrivateKey(password) {
+                let key = localStorage.getItem("privateKey");
+                if (!key) {
+                    console.error("No private key found in local storage.");
+                    return null;
+                }
+                let iv = await passwordToIV(password);
+                console.log("IV:", dataToBase64(iv));
+                let keyBuffer = await derivePasswordKey(password);
+                let encryptedPrivKey = base64ToData(key);
+                let decryptedPrivKey = await crypto.subtle.decrypt({
+                    name: "AES-CBC",
+                    iv: iv
+                }, keyBuffer, encryptedPrivKey);
+                return await crypto.subtle.importKey("pkcs8", decryptedPrivKey, { name: "RSA-OAEP", hash: "SHA-256" }, true, ["decrypt"]);
+            }
             async function register() {
                 const username = document.getElementById('username').value;
                 const password = document.getElementById('password').value;
@@ -66,17 +94,17 @@
                     hash: "SHA-256"
                 }, true, ["encrypt", "decrypt"]);
                 let exportedPrivKey = await crypto.subtle.exportKey("pkcs8", key.privateKey);
-                console.log("Private Key:", keyToHex(exportedPrivKey));
+                console.log("Private Key:", dataToBase64(exportedPrivKey));
                 let iv = await passwordToIV(password)
-                console.log("IV:", keyToHex(iv));
+                console.log("IV:", dataToBase64(iv));
                 let keyBuffer = await crypto.subtle.importKey("raw", new TextEncoder().encode(recoveryWord), { name: "AES-CBC" }, false, ["encrypt"]);
                 let encryptedPrivKey = await crypto.subtle.encrypt({
                     name: "AES-CBC",
                     iv: iv
                 }, keyBuffer, exportedPrivKey);
-                let privateKeyHex = keyToHex(encryptedPrivKey);
+                let privateKeyHex = dataToBase64(encryptedPrivKey);
                 let exportedPubKey = await crypto.subtle.exportKey("spki", key.publicKey);
-                let publicKeyHex = keyToHex(exportedPubKey);
+                let publicKeyHex = dataToBase64(exportedPubKey);
 
                 let req = await fetch('/api/register', {
                     method: 'POST',
@@ -98,7 +126,7 @@
                     name: "AES-CBC",
                     iv: iv
                 }, keyBuffer2, exportedPrivKey);
-                localStorage.setItem("privateKey", keyToHex(encryptedPrivKey2));
+                localStorage.setItem("privateKey", dataToBase64(encryptedPrivKey2));
                 localStorage.setItem("publicKey", publicKeyHex);
             }
             async function recover() {
@@ -119,26 +147,62 @@
                     return;
                 }
                 console.log(res);
-                let encryptedPrivKey = hexToKey(res.body.privateKey);
-                let publicKey = hexToKey(res.body.publicKey);
+
+                let encryptedPrivKey = base64ToData(res.body.privateKey);
+                let publicKey = base64ToData(res.body.publicKey);
                 let keyBuffer = await crypto.subtle.importKey("raw", new TextEncoder().encode(recoveryWord), { name: "AES-CBC" }, false, ["decrypt"]);
                 let iv = await passwordToIV(password);
-                console.log("IV:", keyToHex(iv));
+                console.log("IV:", dataToBase64(iv));
                 let decryptedPrivKey = await crypto.subtle.decrypt({
                     name: "AES-CBC",
                     iv: iv
                 }, keyBuffer, encryptedPrivKey);
                 let privateKey = await crypto.subtle.importKey("pkcs8", decryptedPrivKey, { name: "RSA-OAEP", hash: "SHA-256" }, true, ["decrypt"]);
                 let importedPublicKey = await crypto.subtle.importKey("spki", publicKey, { name: "RSA-OAEP", hash: "SHA-256" }, true, ["encrypt"]);
-                console.log("Private Key:", keyToHex(decryptedPrivKey));
+                console.log("Private Key:", dataToBase64(decryptedPrivKey));
 
                 let keyBuffer2 = await derivePasswordKey(password);
                 let encryptedPrivKey2 = await crypto.subtle.encrypt({
                     name: "AES-CBC",
                     iv: iv
                 }, keyBuffer2, decryptedPrivKey);
-                localStorage.setItem("privateKey", keyToHex(encryptedPrivKey2));
-                localStorage.setItem("publicKey", keyToHex(publicKey));
+                localStorage.setItem("privateKey", dataToBase64(encryptedPrivKey2));
+                localStorage.setItem("publicKey", dataToBase64(publicKey));
+            }
+            async function login() {
+                const username = document.getElementById('loginUsername').value;
+                const password = document.getElementById('loginPassword').value;
+
+                let req = await fetch('/api/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ username, password, protocol: PROT_NAME, protocolVersion: PROT_VER })
+                });
+                let res = await req.json();
+                if (!res.ok) {
+                    console.error("Login failed:", res.error);
+                    return;
+                }
+                console.log(res);
+
+                let key = await decryptPrivateKey(password);
+                if (!key) {
+                    console.error("Failed to decrypt private key.");
+                    return;
+                }
+                console.log(key);
+                
+                let decryptedKeyVerifier = await crypto.subtle.decrypt({
+                    name: "RSA-OAEP"
+                }, key, base64ToArray(res.body.encryptedKeyVerifier));
+                if (new TextDecoder().decode(decryptedKeyVerifier) == res.body.keyVerifier) {
+                    console.log("Login successful!");
+                } else {
+                    console.error("Key verifier mismatch. Recovery needed!");
+                }
+                localStorage.setItem("token", res.body.token);
             }
         </script>
     </body>
