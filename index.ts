@@ -113,25 +113,38 @@ const httpServer = http.createServer((req, res) => {
                 res.end(sendResponse(false, null, "Invalid private key"));
                 return;
             }
+            if (parsedBody.publicKey == undefined || typeof parsedBody.publicKey != "string") {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid public key"));
+                return;
+            }
             const collection = db.collection("users");
             let existingUser = await collection.findOne({ username: parsedBody.username });
-            if (existingUser == null) {
+            if (existingUser != null) {
                 res.writeHead(400, { 'Content-Type': 'application/json' });
                 res.end(sendResponse(false, null, "Username already exists"));
                 return;
             }
             let token: string;
+            let check = 0
             while (true) {
-                token = generateRandomString(32);
+                token = generateRandomString(256);
                 let existingToken = await collection.findOne({ token: token });
-                if (existingToken != null) {
+                if (existingToken == null) {
                     break;
+                }
+                check++;
+                if (check > 10) {
+                    res.writeHead(500, { 'Content-Type': 'application/json' });
+                    res.end(sendResponse(false, null, "Could not generate token, please try again later..."));
+                    return;
                 }
             }
             collection.insertOne({
                 username: parsedBody.username,
                 password: crypto.createHash('sha256').update(parsedBody.password).digest('hex'),
                 privateKey: parsedBody.privateKey,
+                publicKey: parsedBody.publicKey,
                 createdAt: new Date(),
                 lastLogin: new Date(),
                 lastIP: ip,

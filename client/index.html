@@ -24,10 +24,13 @@
                 }
                 return result;
             }
+            function keyToHex(key) {
+                return Array.from(new Uint8Array(key)).map(b => b.toString(16).padStart(2, '0')).join('')
+            }
             async function register() {
                 const username = document.getElementById('username').value;
                 const password = document.getElementById('password').value;
-                const recoveryWord = generateRandomString(256);
+                const recoveryWord = generateRandomString(32);
                 console.log("Recovery word:", recoveryWord);
                 
                 let key = await crypto.subtle.generateKey({
@@ -36,24 +39,24 @@
                     publicExponent: new Uint8Array([0x01, 0x00, 0x01]),
                     hash: "SHA-256"
                 }, true, ["encrypt", "decrypt"]);
-                let exportedKey = await crypto.subtle.exportKey("pkcs8", key.privateKey);
+                let exportedPrivKey = await crypto.subtle.exportKey("pkcs8", key.privateKey);
                 let iv = crypto.getRandomValues(new Uint8Array(16));
-                console.log("IV:", iv);
-                //We need to hash the recovery word to use it as a key for AES encryption
-                let hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(recoveryWord));
-                let keyBuffer = await crypto.subtle.importKey("raw", hash, { name: "AES-CBC" }, false, ["encrypt"]);
-                let encryptedKey = await crypto.subtle.encrypt({
+                console.log("IV:", keyToHex(iv));
+                let keyBuffer = await crypto.subtle.importKey("raw", new TextEncoder().encode(recoveryWord), { name: "AES-CBC" }, false, ["encrypt"]);
+                let encryptedPrivKey = await crypto.subtle.encrypt({
                     name: "AES-CBC",
                     iv: iv
-                }, keyBuffer, exportedKey);
-                let encryptedKeyHex = Array.from(new Uint8Array(encryptedKey)).map(b => b.toString(16).padStart(2, '0')).join('');
+                }, keyBuffer, exportedPrivKey);
+                let privateKeyHex = keyToHex(encryptedPrivKey);
+                let exportedPubKey = await crypto.subtle.exportKey("spki", key.publicKey);
+                let publicKeyHex = keyToHex(exportedPubKey);
 
                 let req = await fetch('/api/register', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
                     },
-                    body: JSON.stringify({ username, password, privateKey: encryptedKeyHex })
+                    body: JSON.stringify({ username, password, privateKey: privateKeyHex, publicKey: publicKeyHex })
                 });
                 let res = await req.json();
                 console.log(res);
