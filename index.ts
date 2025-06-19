@@ -170,7 +170,7 @@ const httpServer = http.createServer(async (req, res) => {
                 return;
             }
             const collection = db.collection("users");
-            let existingUser = await collection.findOne({ username: parsedBody.username });
+            let existingUser = await collection.findOne({ username: "@"+parsedBody.username });
             if (existingUser != null) {
                 res.writeHead(400, { 'Content-Type': 'application/json' });
                 res.end(sendResponse(false, null, "Username already exists"));

@@ -55,7 +55,7 @@
                 utils.base64ToArray(res.body.encryptedKeyVerifier)
             );
             if (new TextDecoder().decode(decryptedKeyVerifier) == res.body.keyVerifier) {
-                localStorage.setItem("state", "4")
+                localStorage.setItem("state", "5")
                 window.location.href = ""
             } else {
                 alertMsg.value = "Key verifier mismatch. Recovery needed!";
@@ -72,12 +72,17 @@
         }
         localStorage.setItem("token", res.body.token);
     }
+    function toRegister() {
+        localStorage.setItem("state", "2");
+        window.location.href = "";
+    }
 </script>
 
 <template>
     <div class="bg">
         <main class="w-full h-full md:w-50px">
             <div class="flex flex-col gap-2">
+                <h1 class="text-4xl">Log in</h1>
                 <Message severity="error" :hidden="alerthidden">{{ alertMsg }}</Message>
                 <label for="username">Username</label>
                 <InputText type="text" name="username" placeholder="Username" style="margin-block: 5px;" v-model="username" />
@@ -85,6 +90,7 @@
                 <InputText type="password" name="password" placeholder="Password" style="margin-block: 5px;" v-model="password" />
                 <a href="javascript:alert('skill issue')">Forgot your password?</a>
                 <Button style="float: right;margin-top: 5px;" @click="login()">Log in</Button>
+                <p>Don't have an account? <a href="#" @click="toRegister()">Register</a></p>
             </div>
         </main>
     </div>
