@@ -12,14 +12,14 @@
 
     async function recover() {
         const token = localStorage.getItem("token");
-        const password = localStorage.getItem("password");
+        const passwordKey = localStorage.getItem("passwordKey");
         if (!token) {
             console.error("No token found in local storage.");
             return;
         }
-        if (!password) {
-            console.error("No password found in local storage.");
-            return;
+        if (!passwordKey) {
+            console.error("No password hash found in local storage.");
+            return null;
         }
 
         let req = await fetch("/api/recover", {
@@ -48,7 +48,7 @@
                 false,
                 ["decrypt"]
             );
-            let iv = await utils.passwordToIV(password);
+            let iv = await utils.passwordToIV(passwordKey);
             let decryptedPrivKey = await crypto.subtle.decrypt(
                 {
                     name: "AES-CBC",
@@ -71,7 +71,7 @@
 
         utils.encryptPrivateKey(privateKey)
         localStorage.setItem("publicKey", utils.dataToBase64(publicKey));
-        localStorage.setItem("state", "1");
+        localStorage.setItem("state", "5");
         window.location.href = "";
     }
 </script>

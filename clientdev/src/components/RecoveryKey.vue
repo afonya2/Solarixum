@@ -12,16 +12,10 @@
 
     async function recover() {
         const token = localStorage.getItem("token");
-        const password = localStorage.getItem("password");
         if (!token) {
             console.error("No token found in local storage.");
             return;
         }
-        if (!password) {
-            console.error("No password found in local storage.");
-            return;
-        }
-
         let req = await fetch("/api/recover", {
             method: "POST",
             headers: {
@@ -53,7 +47,7 @@
 
         utils.encryptPrivateKey(privateKey)
         localStorage.setItem("publicKey", utils.dataToBase64(publicKey));
-        localStorage.setItem("state", "1");
+        localStorage.setItem("state", "5");
         window.location.href = "";
     }
 </script>

@@ -26,7 +26,7 @@
 <template>
     <div class="bg">
         <main class="w-full h-full md:w-50px">
-            <h1 class="text-4xl">Account recovery</h1>
+            <h1 class="text-4xl">Solarixum Account recovery</h1>
             <div class="flex flex-col gap-2" :hidden="mainhidden">
                 <p>Please select one of the recovery methods:</p>
                 <Card @click="useRecoveryWord()">

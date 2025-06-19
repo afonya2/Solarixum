@@ -25,7 +25,10 @@
             return;
         }
         console.log(res);
-        localStorage.setItem("password", password.value);
+
+        let passKey = await utils.derivePasswordKey(password.value)
+        let exportedPassKey = await crypto.subtle.exportKey("raw", passKey);
+        localStorage.setItem("passwordKey", utils.dataToBase64(exportedPassKey));
 
         let key;
         try {
@@ -82,7 +85,7 @@
     <div class="bg">
         <main class="w-full h-full md:w-50px">
             <div class="flex flex-col gap-2">
-                <h1 class="text-4xl">Log in</h1>
+                <h1 class="text-4xl">Solarixum Log in</h1>
                 <Message severity="error" :hidden="alerthidden">{{ alertMsg }}</Message>
                 <label for="username">Username</label>
                 <InputText type="text" name="username" placeholder="Username" style="margin-block: 5px;" v-model="username" />

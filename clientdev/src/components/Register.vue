@@ -26,8 +26,13 @@
             true,
             ["encrypt", "decrypt"]
         );
+
+        let passKey = await utils.derivePasswordKey(password.value)
+        let exportedPassKey = await crypto.subtle.exportKey("raw", passKey);
+        localStorage.setItem("passwordKey", utils.dataToBase64(exportedPassKey));
+        
         let exportedPrivKey = await crypto.subtle.exportKey("pkcs8", key.privateKey);
-        let iv = await utils.passwordToIV(password.value);
+        let iv = await utils.passwordToIV(utils.dataToBase64(exportedPassKey));
         let keyBuffer = await crypto.subtle.importKey(
             "raw",
             new TextEncoder().encode(recoveryWord),
@@ -70,7 +75,6 @@
         console.log(res);
 
         utils.encryptPrivateKey(key.privateKey)
-        localStorage.setItem("password", password.value);
         localStorage.setItem("token", res.body.token);
         localStorage.setItem("publicKey", publicKeyHex);
         localStorage.setItem("state", "5");
@@ -93,7 +97,7 @@
     <div class="bg">
         <main class="w-full h-full md:w-50px">
             <div class="flex flex-col gap-2">
-                <h1 class="text-4xl">Register</h1>
+                <h1 class="text-4xl">Solarixum Register</h1>
                 <Message severity="error" :hidden="alerthidden">{{ alertMsg }}</Message>
                 <Message severity="success" :hidden="sucHidden">
                     {{ sucMsg }}<br>

@@ -36,22 +36,27 @@ async function passwordToIV(password: string): Promise<Uint8Array> {
 }
 async function derivePasswordKey(password: string): Promise<CryptoKey> {
     const encoder = new TextEncoder();
-    const hash = await crypto.subtle.digest("SHA-256", encoder.encode(password));
-    return await crypto.subtle.importKey("raw", hash, { name: "AES-CBC" }, false, ["encrypt", "decrypt"]);
+    const keyMaterial = await crypto.subtle.importKey("raw", encoder.encode(password), { name: "PBKDF2" }, false, ["deriveKey"]);
+    return await crypto.subtle.deriveKey({
+        name: "PBKDF2",
+        salt: await passwordToIV(password),
+        iterations: 100000,
+        hash: "SHA-256"
+    }, keyMaterial, { name: "AES-CBC", length: 256 }, true, ["encrypt", "decrypt"]);
 }
 async function decryptPrivateKey(): Promise<CryptoKey | null> {
     let key = localStorage.getItem("privateKey");
-    let password = localStorage.getItem("password");
+    let passwordKey = localStorage.getItem("passwordKey");
     if (!key) {
         console.error("No private key found in local storage.");
         return null;
     }
-    if (!password) {
+    if (!passwordKey) {
         console.error("No password hash found in local storage.");
         return null;
     }
-    let iv = await passwordToIV(password);
-    let keyBuffer = await derivePasswordKey(password);
+    let iv = await passwordToIV(passwordKey);
+    let keyBuffer = await crypto.subtle.importKey("raw", base64ToData(passwordKey), { name: "AES-CBC" }, false, ["decrypt"]);
     let encryptedPrivKey = base64ToData(key);
     let decryptedPrivKey = await crypto.subtle.decrypt(
         {
@@ -66,17 +71,17 @@ async function decryptPrivateKey(): Promise<CryptoKey | null> {
     ]);
 }
 async function encryptPrivateKey(key: CryptoKey) {
-    let password = localStorage.getItem("password");
+    let passwordKey = localStorage.getItem("passwordKey");
     if (!key) {
         console.error("No private key found in local storage.");
         return null;
     }
-    if (!password) {
-        console.error("No password hash found in local storage.");
+    if (!passwordKey) {
+        console.error("No password key found in local storage.");
         return null;
     }
-    let iv = await passwordToIV(password);
-    let keyBuffer = await derivePasswordKey(password);
+    let iv = await passwordToIV(passwordKey);
+    let keyBuffer = await crypto.subtle.importKey("raw", base64ToData(passwordKey), { name: "AES-CBC" }, false, ["encrypt"]);
     let exportedKey = await crypto.subtle.exportKey("pkcs8", key);
     let encryptedPrivKey = await crypto.subtle.encrypt(
         {
