@@ -15,7 +15,14 @@
         <input type="text" placeholder="Username" id="username">
         <input type="password" placeholder="Password" id="password">
         <button onclick="register()">Register</button>
+        <hr>
+        <input type="text" placeholder="Token" id="token">
+        <input type="text" placeholder="Recovery word" id="recoveryWord">
+        <input type="text" placeholder="IV" id="iv">
+        <button onclick="recover()">Recover</button>
         <script>
+            const PROT_NAME = 'Solarixum Protocol';
+            const PROT_VER = '0.1.0';
             function generateRandomString(length) {
                 const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
                 let result = '';
@@ -26,6 +33,9 @@
             }
             function keyToHex(key) {
                 return Array.from(new Uint8Array(key)).map(b => b.toString(16).padStart(2, '0')).join('')
+            }
+            function hexToKey(hex) {
+                return new Uint8Array(hex.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
             }
             async function register() {
                 const username = document.getElementById('username').value;
@@ -40,6 +50,7 @@
                     hash: "SHA-256"
                 }, true, ["encrypt", "decrypt"]);
                 let exportedPrivKey = await crypto.subtle.exportKey("pkcs8", key.privateKey);
+                console.log("Private Key:", keyToHex(exportedPrivKey));
                 let iv = crypto.getRandomValues(new Uint8Array(16));
                 console.log("IV:", keyToHex(iv));
                 let keyBuffer = await crypto.subtle.importKey("raw", new TextEncoder().encode(recoveryWord), { name: "AES-CBC" }, false, ["encrypt"]);
@@ -56,10 +67,39 @@
                     headers: {
                         'Content-Type': 'application/json'
                     },
-                    body: JSON.stringify({ username, password, privateKey: privateKeyHex, publicKey: publicKeyHex })
+                    body: JSON.stringify({ username, password, privateKey: privateKeyHex, publicKey: publicKeyHex, protocol: PROT_NAME, protocolVersion: PROT_VER })
                 });
                 let res = await req.json();
                 console.log(res);
+            }
+            async function recover() {
+                const token = document.getElementById('token').value;
+                const recoveryWord = document.getElementById('recoveryWord').value;
+                const iv = document.getElementById('iv').value;
+
+                let req = await fetch('/api/recover', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ token, protocol: PROT_NAME, protocolVersion: PROT_VER })
+                });
+                let res = await req.json();
+                if (!res.ok) {
+                    console.error("Recovery failed:", res.error);
+                    return;
+                }
+                console.log(res);
+                let encryptedPrivKey = hexToKey(res.body.privateKey);
+                let publicKey = hexToKey(res.body.publicKey);
+                let keyBuffer = await crypto.subtle.importKey("raw", new TextEncoder().encode(recoveryWord), { name: "AES-CBC" }, false, ["decrypt"]);
+                let decryptedPrivKey = await crypto.subtle.decrypt({
+                    name: "AES-CBC",
+                    iv: hexToKey(iv)
+                }, keyBuffer, encryptedPrivKey);
+                let privateKey = await crypto.subtle.importKey("pkcs8", decryptedPrivKey, { name: "RSA-OAEP", hash: "SHA-256" }, true, ["decrypt"]);
+                let importedPublicKey = await crypto.subtle.importKey("spki", publicKey, { name: "RSA-OAEP", hash: "SHA-256" }, true, ["encrypt"]);
+                console.log("Private Key:", keyToHex(decryptedPrivKey));
             }
         </script>
     </body>
