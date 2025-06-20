@@ -12,23 +12,25 @@
     let messages: Ref<{ username: string, message: string, icon: string, timestamp: number }[]> = ref([])
     let rooms: Ref<{ id: string, label: string, icon: string, active: boolean }[]> = ref([])
     let universes: Ref<{ id: string, label: string, icon: string, active: boolean }[]> = ref([]);
-    let selectedRoom = 0;
-    let selectedUniverse = -1;
+    let selectedRoom = ref(0);
+    let selectedUniverse = ref(-1);
     let messageInput = ref("")
     let newRoomModal = ref(false);
     let roomName = ref("");
     let newUniverseModal = ref(false);
     let universeName = ref("");
+    let inviteModal = ref(false);
+    let inviteName = ref("");
 
     function selectRoom(index: number) {
-        selectedRoom = index;
+        selectedRoom.value = index;
         rooms.value.forEach((room, i) => {
             room.active = i === index;
         });
         getMessages()
     }
     function selectUniverse(index: number) {
-        selectedUniverse = index;
+        selectedUniverse.value = index;
         universes.value.forEach((universe, i) => {
             universe.active = i === index;
         });
@@ -36,10 +38,10 @@
     }
     async function getRooms() {
         rooms.value = [];
-        if (universes.value.length <= selectedUniverse && selectedUniverse != -1) {
+        if (universes.value.length <= selectedUniverse.value && selectedUniverse.value != -1) {
             return
         }
-        let req = await fetch(`/api/rooms${selectedUniverse != -1 ? "?universeId="+encodeURIComponent(universes.value[selectedUniverse].id) : ""}`, {
+        let req = await fetch(`/api/rooms${selectedUniverse.value != -1 ? "?universeId="+encodeURIComponent(universes.value[selectedUniverse.value].id) : ""}`, {
             method: "GET",
             headers: {
                 'Content-Type': 'application/json',
@@ -70,10 +72,10 @@
     }
     async function getMessages() {
         messages.value = [];
-        if (rooms.value.length <= selectedRoom) {
+        if (rooms.value.length <= selectedRoom.value) {
             return
         }
-        const roomId = rooms.value[selectedRoom].id;
+        const roomId = rooms.value[selectedRoom.value].id;
         const token = localStorage.getItem('token');
         if (!token) {
             localStorage.setItem("state", "1")
@@ -229,7 +231,7 @@
             return
         }
 
-        let req = await fetch(`/api/room/create${selectedUniverse != -1 ? "?universeId="+encodeURIComponent(universes.value[selectedUniverse].id) : ""}`, {
+        let req = await fetch(`/api/room/create${selectedUniverse.value != -1 ? "?universeId="+encodeURIComponent(universes.value[selectedUniverse.value].id) : ""}`, {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
@@ -260,7 +262,11 @@
         getRooms()
     }
     async function sendMessage() {
-        const roomId = rooms.value[selectedRoom].id;
+        if (selectedRoom.value >= rooms.value.length) {
+            toast.add({ severity: 'error', summary: 'Error', detail: "No room selected.", life: 3000 });
+            return;
+        }
+        const roomId = rooms.value[selectedRoom.value].id;
         const token = localStorage.getItem('token');
         if (!token) {
             localStorage.setItem("state", "1")
@@ -356,7 +362,7 @@
     }
     async function getUniverses() {
         rooms.value = [];
-        if (universes.value.length <= selectedUniverse && selectedUniverse != -1) {
+        if (universes.value.length <= selectedUniverse.value && selectedUniverse.value != -1) {
             return
         }
         let req = await fetch("/api/universes", {
@@ -467,6 +473,146 @@
         toast.add({ severity: 'success', summary: 'Success', detail: 'Universe created successfully!', life: 3000 });
         getUniverses()
     }
+    async function inviteUser() {
+        const token = localStorage.getItem("token");
+        if (!token) {
+            localStorage.setItem("state", "1")
+            window.location.href = "";
+            return;
+        }
+        if (rooms.value.length <= selectedRoom.value) {
+            toast.add({ severity: 'error', summary: 'Error', detail: "No room selected.", life: 3000 });
+            return;
+        }
+        const roomId = rooms.value[selectedRoom.value].id;
+
+        let req1 = await fetch(`/api/user/getKey?username=${encodeURIComponent(inviteName.value)}`, {
+            method: "GET",
+            headers: {
+                Authorization: token,
+                protocol: PROT_NAME,
+                "protocol-version": PROT_VER,
+            },
+        });
+        let res1 = await req1.json();
+        if (!res1.ok) {
+            if (res1.error === "Invalid token") {
+                localStorage.setItem("state", "1")
+                window.location.href = "";
+                return
+            }
+            toast.add({ severity: 'error', summary: 'Error', detail: res1.error || "An unknown error occurred.", life: 3000 });
+            return;
+        }
+        let req2 = await fetch(`/api/room/getKey?roomId=${encodeURIComponent(roomId)}`, {
+            method: "GET",
+            headers: {
+                Authorization: token,
+                protocol: PROT_NAME,
+                "protocol-version": PROT_VER,
+            },
+        })
+        let res2 = await req2.json();
+        if (!res2.ok) {
+            if (res2.error === "Invalid token") {
+                localStorage.setItem("state", "1")
+                window.location.href = "";
+                return
+            }
+            toast.add({ severity: 'error', summary: 'Error', detail: res2.error || "An unknown error occurred.", life: 3000 });
+            return;
+        }
+        
+        const privateKey = await utils.decryptPrivateKey()
+        if (!privateKey) {
+            localStorage.setItem("state", "1")
+            window.location.href = "";
+            return;
+        }
+        let decryptedKey
+        let decryptedIv
+        try {
+            decryptedKey = await crypto.subtle.decrypt(
+                {
+                    name: "RSA-OAEP",
+                },
+                privateKey,
+                utils.base64ToArray(res2.body.key)
+            );
+            decryptedIv = await crypto.subtle.decrypt(
+                {
+                    name: "RSA-OAEP",
+                },
+                privateKey,
+                utils.base64ToArray(res2.body.iv)
+            );
+        } catch (e) {
+            toast.add({ severity: 'error', summary: 'Error', detail: "Failed to decrypt the room key.", life: 3000 });
+            return;
+        }
+        
+        let encryptedRoomKey
+        let encryptedIv
+        try {
+            let userKey = await crypto.subtle.importKey(
+                "spki",
+                utils.base64ToData(res1.body.publicKey),
+                {
+                    name: "RSA-OAEP",
+                    hash: "SHA-256",
+                },
+                false,
+                ["encrypt"]
+            );
+            encryptedRoomKey = await crypto.subtle.encrypt(
+                {
+                    name: "RSA-OAEP",
+                },
+                userKey,
+                decryptedKey
+            );
+            encryptedIv = await crypto.subtle.encrypt(
+                {
+                    name: "RSA-OAEP",
+                },
+                userKey,
+                decryptedIv
+            );
+        } catch (e) {
+            toast.add({ severity: 'error', summary: 'Error', detail: "Failed to encrypt the room key for the user.", life: 3000 });
+            return;
+        }
+
+        let req3 = await fetch(selectedUniverse.value == -1 ? "/api/room/invite" : "/api/universe/invite", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+                token,
+                roomId,
+                username: inviteName.value,
+                key: utils.dataToBase64(encryptedRoomKey),
+                iv: utils.dataToBase64(encryptedIv),
+                protocol: PROT_NAME,
+                protocolVersion: PROT_VER,
+                universeId: selectedUniverse.value != -1 ? universes.value[selectedUniverse.value].id : undefined,
+            }),
+        });
+        let res3 = await req3.json();
+        if (!res3.ok) {
+            if (res3.error === "Invalid token") {
+                localStorage.setItem("state", "1")
+                window.location.href = "";
+                return
+            }
+            toast.add({ severity: 'error', summary: 'Error', detail: res3.error || "An unknown error occurred.", life: 3000 });
+            return;
+        }
+        toast.add({ severity: 'success', summary: 'Success', detail: `User ${inviteName.value} invited to room!`, life: 3000 });
+        inviteName.value = "";
+        inviteModal.value = false;
+    }
     getUniverses()
 </script>
 
@@ -485,15 +631,22 @@
                 <Button style="width: fit-content;margin-left: auto;" @click="createUniverse()">Create</Button>
             </div>
         </Dialog>
+        <Dialog v-model:visible="inviteModal" modal :header="`Invite to '${selectedRoom < rooms.length ? (selectedUniverse == -1 ? rooms[selectedRoom].label : universes[selectedUniverse].label) : 'Loading...'}'`" style="width: fit-content;">
+            <div class="flex flex-col gap-4">
+                <InputText type="text" placeholder="Username" style="width: 400px" @keypress.enter = "createRoom()" v-model="inviteName" />
+                <Button style="width: fit-content;margin-left: auto;" @click="inviteUser()">Invite</Button>
+            </div>
+        </Dialog>
         <div class="universe-select">
-            <UniverseButton label="Home" icon="../logo.svg" active="true" @click="selectUniverse(-1)" />
+            <UniverseButton label="Home" icon="../logo.svg" :active="selectedUniverse == -1" @click="selectUniverse(-1)" />
             <Divider />
             <UniverseButton v-for="(universe, i) in universes" :label="universe.label" :icon="universe.icon" :active="universe.active" @click="selectUniverse(i)" />
             <UniverseButton label="Create Universe" icon="../logo.svg" active="false" @click="newUniverseModal = true" />
         </div>
         <div class="content">
             <div class="content-head">
-                <h2 class="text-2xl">Home</h2>
+                <h2 class="text-2xl">{{ selectedUniverse < universes.length ? (selectedUniverse == -1 ? "Home" : universes[selectedUniverse].label) : "Loading..." }}</h2>
+                <a href="#" class="ml-4" @click="inviteModal = true"><span class="material-symbols-rounded align-middle">person_add</span></a>
             </div>
             <div class="room-select">
                 <div class="flex items-center mb-4">
@@ -547,6 +700,7 @@
     padding: 20px;
     display: flex;
     align-items: center;
+    user-select: none;
 }
 .room-select {
     position: absolute;

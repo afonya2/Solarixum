@@ -406,6 +406,7 @@ const httpServer = http.createServer(async (req, res) => {
                     members: [],
                     universeId: decodeURIComponent(args.universeId)
                 })
+                universesCollection.updateOne({ id: decodeURIComponent(args.universeId) }, { $addToSet: { rooms: roomId } })
             } else {
                 roomsCollection.insertOne({
                     id: roomId,
@@ -699,7 +700,7 @@ const httpServer = http.createServer(async (req, res) => {
             return;
         }
         collection.updateOne({ token: user.token }, { $set: { lastCommunication: new Date() } })
-        const targetUser = await collection.findOne({ username: args.username });
+        const targetUser = await collection.findOne({ username: decodeURIComponent(args.username) });
         if (targetUser == null) {
             res.writeHead(404, { 'Content-Type': 'application/json' });
             res.end(sendResponse(false, null, "User not found"));
@@ -1008,6 +1009,106 @@ const httpServer = http.createServer(async (req, res) => {
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(sendResponse(true, {
                 universeId: universeId
+            }));
+        })
+    } else if (clearUrl == "/api/universe/invite" && req.method === 'POST') {
+        let body = '';
+        req.on('data', async (data) => {
+            body += data.toString();
+        })
+        req.on('end', async () => {
+            let parsedBody: any;
+            try {
+                parsedBody = JSON.parse(body);
+            } catch (e) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid JSON"));
+                return;
+            }
+            if (parsedBody.protocol != PROT_NAME) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Unknown protocol"));
+                return
+            }
+            if (parsedBody.protocolVersion != PROT_VER) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Unsupported protocol version"));
+                return;
+            }
+            if (parsedBody.token == undefined || typeof parsedBody.token != "string") {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid token"));
+                return;
+            }
+            if (parsedBody.universeId == undefined || typeof parsedBody.universeId != "string" || !parsedBody.universeId.startsWith("&")) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid universe ID"));
+                return;
+            }
+            if (parsedBody.username == undefined || typeof parsedBody.username != "string" || parsedBody.username.length < 5 || parsedBody.username.length > 32 || !parsedBody.username.startsWith("@")) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid username"));
+                return;
+            }
+            if (parsedBody.key == undefined || typeof parsedBody.key != "string") {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid key"));
+                return;
+            }
+            if (parsedBody.iv == undefined || typeof parsedBody.iv != "string") {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid IV"));
+                return;
+            }
+            const collection = db.collection("users");
+            const user = await collection.findOne({ token: parsedBody.token });
+            if (user == null) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid token"));
+                return;
+            }
+            if (user.suspended) {
+                res.writeHead(403, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "User is suspended"));
+                return;
+            }
+            collection.updateOne({ token: user.token }, { $set: { lastCommunication: new Date() } })
+            const targetUser = await collection.findOne({ username: parsedBody.username });
+            if (targetUser == null) {
+                res.writeHead(404, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "User not found"));
+                return;
+            }
+            const universesCollection = db.collection("universes");
+            const universe = await universesCollection.findOne({ id: parsedBody.universeId });
+            if (universe == null) {
+                res.writeHead(404, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Universe not found"));
+                return;
+            }
+            if (!universe.members.includes(user.username)) {
+                res.writeHead(403, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "User is not member of this universe"));
+                return;
+            }
+            if (universe.members.includes(targetUser.username)) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "User is already member of this universe"));
+                return;
+            }
+            const keyCollection = db.collection("universeKeys");
+            universesCollection.updateOne({ id: parsedBody.universeId }, { $addToSet: { members: targetUser.username } })
+            keyCollection.insertOne({
+                user: targetUser.username,
+                universeId: parsedBody.universeId,
+                key: parsedBody.key,
+                iv: parsedBody.iv,
+                createdAt: new Date()
+            })
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(sendResponse(true, {
+                universeId: parsedBody.universeId,
+                username: targetUser.username
             }));
         })
     } else {
