@@ -2,7 +2,7 @@
     import { ref, type Ref } from 'vue';
     import ChatMessage from './components/ChatMessage.vue';
     import RoomButton from './components/RoomButton.vue';
-    import SolarButton from './components/SolarButton.vue';
+    import UniverseButton from './components/UniverseButton.vue';
     import { Divider, Toast, useToast, InputText, Dialog, Button } from 'primevue';
     import utils from './utils';
 
@@ -11,10 +11,14 @@
     const toast = useToast()
     let messages: Ref<{ username: string, message: string, icon: string, timestamp: number }[]> = ref([])
     let rooms: Ref<{ id: string, label: string, icon: string, active: boolean }[]> = ref([])
+    let universes: Ref<{ id: string, label: string, icon: string, active: boolean }[]> = ref([]);
     let selectedRoom = 0;
+    let selectedUniverse = -1;
     let messageInput = ref("")
     let newRoomModal = ref(false);
     let roomName = ref("");
+    let newUniverseModal = ref(false);
+    let universeName = ref("");
 
     function selectRoom(index: number) {
         selectedRoom = index;
@@ -23,8 +27,19 @@
         });
         getMessages()
     }
+    function selectUniverse(index: number) {
+        selectedUniverse = index;
+        universes.value.forEach((universe, i) => {
+            universe.active = i === index;
+        });
+        getRooms()
+    }
     async function getRooms() {
-        let req = await fetch("/api/rooms", {
+        rooms.value = [];
+        if (universes.value.length <= selectedUniverse && selectedUniverse != -1) {
+            return
+        }
+        let req = await fetch(`/api/rooms${selectedUniverse != -1 ? "?universeId="+encodeURIComponent(universes.value[selectedUniverse].id) : ""}`, {
             method: "GET",
             headers: {
                 'Content-Type': 'application/json',
@@ -165,7 +180,6 @@
         }
         console.log("Messages:", messages);
     }
-    getRooms()
     async function createRoom() {
         const token = localStorage.getItem("token");
         const publicKey = localStorage.getItem("publicKey");
@@ -215,7 +229,7 @@
             return
         }
 
-        let req = await fetch("/api/room/create", {
+        let req = await fetch(`/api/room/create${selectedUniverse != -1 ? "?universeId="+encodeURIComponent(universes.value[selectedUniverse].id) : ""}`, {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
@@ -340,6 +354,120 @@
         messageInput.value = ""
         getMessages()
     }
+    async function getUniverses() {
+        rooms.value = [];
+        if (universes.value.length <= selectedUniverse && selectedUniverse != -1) {
+            return
+        }
+        let req = await fetch("/api/universes", {
+            method: "GET",
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': localStorage.getItem('token') || '',
+                'protocol': PROT_NAME,
+                'protocol-version': PROT_VER
+            }
+        })
+        let res = await req.json();
+        if (!res.ok) {
+            if (res.error === "Invalid token") {
+                localStorage.setItem("state", "1")
+                window.location.href = "";
+                return
+            }
+            toast.add({ severity: 'error', summary: 'Error', detail: res.error || "An unknown error occurred.", life: 3000 });
+            return;
+        }
+        console.log(res);
+        
+        universes.value = res.body.map((universe: any) => ({
+            id: universe.id,
+            label: universe.name,
+            icon: '../logo.svg',
+            active: false
+        }));
+        selectUniverse(-1)
+    }
+    async function createUniverse() {
+        const token = localStorage.getItem("token");
+        const publicKey = localStorage.getItem("publicKey");
+        if (!token) {
+            localStorage.setItem("state", "1")
+            window.location.href = "";
+            return;
+        }
+        if (!publicKey) {
+            localStorage.setItem("state", "1")
+            window.location.href = "";
+            return;
+        }
+
+        let universeKey = utils.generateRandomString(32);
+        let iv = crypto.getRandomValues(new Uint8Array(16));
+        const pKey = utils.base64ToData(publicKey);
+        let encryptedUniverseKey
+        let encryptedIv
+        try {
+            const keyBuffer = await crypto.subtle.importKey(
+                "spki",
+                pKey,
+                {
+                    name: "RSA-OAEP",
+                    hash: "SHA-256",
+                },
+                false,
+                ["encrypt"]
+            );
+            encryptedUniverseKey = await crypto.subtle.encrypt(
+                {
+                    name: "RSA-OAEP",
+                },
+                keyBuffer,
+                new TextEncoder().encode(universeKey)
+            );
+            encryptedIv = await crypto.subtle.encrypt(
+                {
+                    name: "RSA-OAEP",
+                },
+                keyBuffer,
+                iv
+            ); 
+        } catch (e) {
+            toast.add({ severity: 'error', summary: 'Error', detail: "Failed to encrypt the universe key.", life: 3000 });
+            return
+        }
+
+        let req = await fetch("/api/universe/create", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+                token,
+                universeName: universeName.value,
+                universeKey: utils.dataToBase64(encryptedUniverseKey),
+                iv: utils.dataToBase64(encryptedIv),
+                protocol: PROT_NAME,
+                protocolVersion: PROT_VER,
+            }),
+        });
+        let res = await req.json();
+        if (!res.ok) {
+            if (res.error === "Invalid token") {
+                localStorage.setItem("state", "1")
+                window.location.href = "";
+                return
+            }
+            toast.add({ severity: 'error', summary: 'Error', detail: res.error || "An unknown error occurred.", life: 3000 });
+            return;
+        }
+        console.log(res);
+        universeName.value = "";
+        newUniverseModal.value = false;
+        toast.add({ severity: 'success', summary: 'Success', detail: 'Universe created successfully!', life: 3000 });
+        getUniverses()
+    }
+    getUniverses()
 </script>
 
 <template>
@@ -351,11 +479,17 @@
                 <Button style="width: fit-content;margin-left: auto;" @click="createRoom()">Create</Button>
             </div>
         </Dialog>
-        <div class="solar-select">
-            <SolarButton label="Home" icon="../logo.svg" active="true" />
+        <Dialog v-model:visible="newUniverseModal" modal header="Create universe" style="width: fit-content;">
+            <div class="flex flex-col gap-4">
+                <InputText type="text" placeholder="Universe name" style="width: 400px" @keypress.enter = "createRoom()" v-model="universeName" />
+                <Button style="width: fit-content;margin-left: auto;" @click="createUniverse()">Create</Button>
+            </div>
+        </Dialog>
+        <div class="universe-select">
+            <UniverseButton label="Home" icon="../logo.svg" active="true" @click="selectUniverse(-1)" />
             <Divider />
-            <!--<SolarButton label="Home" icon="../logo.svg" active="false" />
-            <SolarButton label="Home" icon="../logo.svg" active="false" />-->
+            <UniverseButton v-for="(universe, i) in universes" :label="universe.label" :icon="universe.icon" :active="universe.active" @click="selectUniverse(i)" />
+            <UniverseButton label="Create Universe" icon="../logo.svg" active="false" @click="newUniverseModal = true" />
         </div>
         <div class="content">
             <div class="content-head">
@@ -432,7 +566,7 @@
     height: calc(100% - 74px);
     border-bottom-right-radius: 20px;
 }
-.solar-select {
+.universe-select {
     position: fixed;
     top: 0;
     left: 0;

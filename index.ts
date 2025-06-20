@@ -379,21 +379,50 @@ const httpServer = http.createServer(async (req, res) => {
             collection.updateOne({ token: user.token }, { $set: { lastCommunication: new Date() } })
             const roomsCollection = db.collection("rooms");
             const keyCollection = db.collection("roomKeys");
+            const universesCollection = db.collection("universes");
             const roomId = "#"+ulid();
-            roomsCollection.insertOne({
-                id: roomId,
-                name: parsedBody.roomName,
-                owner: user.username,
-                createdAt: new Date(),
-                members: [user.username]
-            })
-            keyCollection.insertOne({
-                user: user.username,
-                roomId: roomId,
-                key: parsedBody.roomKey,
-                iv: parsedBody.iv,
-                createdAt: new Date()
-            })
+            if (args.universeId != undefined) {
+                if (typeof args.universeId != "string" || !args.universeId.startsWith("&")) {
+                    res.writeHead(400, { 'Content-Type': 'application/json' });
+                    res.end(sendResponse(false, null, "Invalid universe ID"));
+                    return;
+                }
+                const universe = await universesCollection.findOne({ id: decodeURIComponent(args.universeId) });
+                if (universe == null) {
+                    res.writeHead(404, { 'Content-Type': 'application/json' });
+                    res.end(sendResponse(false, null, "Universe not found"));
+                    return;
+                }
+                if (!universe.members.includes(user.username)) {
+                    res.writeHead(403, { 'Content-Type': 'application/json' });
+                    res.end(sendResponse(false, null, "User is not member of this universe"));
+                    return;                    
+                }
+                roomsCollection.insertOne({
+                    id: roomId,
+                    name: parsedBody.roomName,
+                    owner: user.username,
+                    createdAt: new Date(),
+                    members: [],
+                    universeId: decodeURIComponent(args.universeId)
+                })
+            } else {
+                roomsCollection.insertOne({
+                    id: roomId,
+                    name: parsedBody.roomName,
+                    owner: user.username,
+                    createdAt: new Date(),
+                    members: [user.username],
+                    universeId: "&0"
+                })
+                keyCollection.insertOne({
+                    user: user.username,
+                    roomId: roomId,
+                    key: parsedBody.roomKey,
+                    iv: parsedBody.iv,
+                    createdAt: new Date()
+                })
+            }
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(sendResponse(true, {
                 roomId: roomId
@@ -435,17 +464,40 @@ const httpServer = http.createServer(async (req, res) => {
             res.end(sendResponse(false, null, "Room not found"));
             return;
         }
-        if (!room.members.includes(user.username)) {
-            res.writeHead(403, { 'Content-Type': 'application/json' });
-            res.end(sendResponse(false, null, "User is not member of this room"));
-            return;
-        }
-        const keyCollection = db.collection("roomKeys");
-        const key = await keyCollection.findOne({ user: user.username, roomId: args.roomId });
-        if (key == null) {
-            res.writeHead(404, { 'Content-Type': 'application/json' });
-            res.end(sendResponse(false, null, "Room key not found"));
-            return;
+        let key
+        if (room.universeId != "&0") {
+            const universesCollection = db.collection("universes");
+            const universe = await universesCollection.findOne({ id: room.universeId });
+            if (universe == null) {
+                res.writeHead(404, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Universe not found"));
+                return;
+            }
+            if (!universe.members.includes(user.username)) {
+                res.writeHead(403, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "User is not member of this universe"));
+                return;
+            }
+            const keyCollection = db.collection("universeKeys");
+            key = await keyCollection.findOne({ user: user.username, universeId: universe.id });
+            if (key == null) {
+                res.writeHead(404, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Universe key not found"));
+                return;
+            }
+        } else {
+            if (!room.members.includes(user.username)) {
+                res.writeHead(403, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "User is not member of this room"));
+                return;
+            }
+            const keyCollection = db.collection("roomKeys");
+            key = await keyCollection.findOne({ user: user.username, roomId: args.roomId });
+            if (key == null) {
+                res.writeHead(404, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Room key not found"));
+                return;
+            }
         }
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(sendResponse(true, {
@@ -511,10 +563,25 @@ const httpServer = http.createServer(async (req, res) => {
                 res.end(sendResponse(false, null, "Room not found"));
                 return;
             }
-            if (!room.members.includes(user.username)) {
-                res.writeHead(403, { 'Content-Type': 'application/json' });
-                res.end(sendResponse(false, null, "User is not member of this room"));
-                return;
+            if (room.universeId != "&0") {
+                const universesCollection = db.collection("universes");
+                const universe = await universesCollection.findOne({ id: room.universeId });
+                if (universe == null) {
+                    res.writeHead(404, { 'Content-Type': 'application/json' });
+                    res.end(sendResponse(false, null, "Universe not found"));
+                    return;
+                }
+                if (!universe.members.includes(user.username)) {
+                    res.writeHead(403, { 'Content-Type': 'application/json' });
+                    res.end(sendResponse(false, null, "User is not member of this universe"));
+                    return;
+                }
+            } else {
+                if (!room.members.includes(user.username)) {
+                    res.writeHead(403, { 'Content-Type': 'application/json' });
+                    res.end(sendResponse(false, null, "User is not member of this room"));
+                    return;
+                }
             }
             const messagesCollection = db.collection("messages");
             let messageId = "$"+ulid();
@@ -567,10 +634,25 @@ const httpServer = http.createServer(async (req, res) => {
             res.end(sendResponse(false, null, "Room not found"));
             return;
         }
-        if (!room.members.includes(user.username)) {
-            res.writeHead(403, { 'Content-Type': 'application/json' });
-            res.end(sendResponse(false, null, "User is not member of this room"));
-            return;
+        if (room.universeId != "&0") {
+            const universesCollection = db.collection("universes");
+            const universe = await universesCollection.findOne({ id: room.universeId });
+            if (universe == null) {
+                res.writeHead(404, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Universe not found"));
+                return;
+            }
+            if (!universe.members.includes(user.username)) {
+                res.writeHead(403, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "User is not member of this universe"));
+                return;
+            }
+        } else {
+            if (!room.members.includes(user.username)) {
+                res.writeHead(403, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "User is not member of this room"));
+                return;
+            }
         }
         const messagesCollection = db.collection("messages");
         const messages = await messagesCollection.find({ roomId: decodeURIComponent(args.roomId) }).toArray();
@@ -703,6 +785,11 @@ const httpServer = http.createServer(async (req, res) => {
                 res.end(sendResponse(false, null, "Room not found"));
                 return;
             }
+            if (room.universeId != "&0") {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Unable to invite users to universe rooms, use /api/universe/invite instead"));
+                return;
+            }
             if (!room.members.includes(user.username)) {
                 res.writeHead(403, { 'Content-Type': 'application/json' });
                 res.end(sendResponse(false, null, "User is not member of this room"));
@@ -782,7 +869,17 @@ const httpServer = http.createServer(async (req, res) => {
         }
         collection.updateOne({ token: user.token }, { $set: { lastCommunication: new Date() } })
         const roomsCollection = db.collection("rooms");
-        const rooms = await roomsCollection.find({ members: { $all: [ user.username ] } }).toArray();
+        let rooms
+        if (args.universeId != undefined) {
+            if (typeof args.universeId != "string" || !args.universeId.startsWith("&")) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid universe ID"));
+                return;
+            }
+            rooms = await roomsCollection.find({ universeId: decodeURIComponent(args.universeId) }).toArray();
+        } else {
+            rooms = await roomsCollection.find({ members: { $all: [ user.username ] }, universeId: "&0" }).toArray();
+        }
         let resRooms: any[] = [];
         for (let i = 0; i < rooms.length; i++) {
             resRooms.push({
@@ -795,6 +892,124 @@ const httpServer = http.createServer(async (req, res) => {
         }
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(sendResponse(true, resRooms));
+    } else if (clearUrl == "/api/universes" && req.method == 'GET') {
+        if (req.headers["protocol"] != PROT_NAME) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(sendResponse(false, null, "Unknown protocol"));
+            return;
+        }
+        if (req.headers["protocol-version"] != PROT_VER) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(sendResponse(false, null, "Unsupported protocol version"));
+            return;
+        }
+        const collection = db.collection("users");
+        const user = await collection.findOne({ token: req.headers["authorization"] });
+        if (user == null) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(sendResponse(false, null, "Invalid token"));
+            return;
+        }
+        if (user.suspended) {
+            res.writeHead(403, { 'Content-Type': 'application/json' });
+            res.end(sendResponse(false, null, "User is suspended"));
+            return;
+        }
+        collection.updateOne({ token: user.token }, { $set: { lastCommunication: new Date() } })
+        const universesCollection = db.collection("universes");
+        const universes = await universesCollection.find({ members: { $all: [ user.username ] } }).toArray();
+        let resUniverses: any[] = [];
+        for (let i = 0; i < universes.length; i++) {
+            resUniverses.push({
+                id: universes[i].id,
+                name: universes[i].name,
+                owner: universes[i].owner,
+                createdAt: universes[i].createdAt,
+                members: universes[i].members
+            });
+        }
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(sendResponse(true, resUniverses));
+    } else if (clearUrl == "/api/universe/create" && req.method === 'POST') {
+        let body = '';
+        req.on('data', async (data) => {
+            body += data.toString();
+        })
+        req.on('end', async () => {
+            let parsedBody: any;
+            try {
+                parsedBody = JSON.parse(body);
+            } catch (e) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid JSON"));
+                return;
+            }
+            if (parsedBody.protocol != PROT_NAME) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Unknown protocol"));
+                return
+            }
+            if (parsedBody.protocolVersion != PROT_VER) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Unsupported protocol version"));
+                return;
+            }
+            if (parsedBody.token == undefined || typeof parsedBody.token != "string") {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid token"));
+                return;
+            }
+            if (parsedBody.universeName == undefined || typeof parsedBody.universeName != "string" || parsedBody.universeName.length < 3 || parsedBody.universeName.length > 32) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid universe name"));
+                return;
+            }
+            if (parsedBody.universeKey == undefined || typeof parsedBody.universeKey != "string") {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid universe key"));
+                return;
+            }
+            if (parsedBody.iv == undefined || typeof parsedBody.iv != "string") {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid IV"));
+                return;
+            }
+            const collection = db.collection("users");
+            const user = await collection.findOne({ token: parsedBody.token });
+            if (user == null) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid token"));
+                return;
+            }
+            if (user.suspended) {
+                res.writeHead(403, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "User is suspended"));
+                return;
+            }
+            collection.updateOne({ token: user.token }, { $set: { lastCommunication: new Date() } })
+            const universesCollection = db.collection("universes");
+            const keyCollection = db.collection("universeKeys");
+            const universeId = "&"+ulid();
+            universesCollection.insertOne({
+                id: universeId,
+                name: parsedBody.universeName,
+                owner: user.username,
+                createdAt: new Date(),
+                members: [user.username],
+                rooms: []
+            })
+            keyCollection.insertOne({
+                user: user.username,
+                universeId: universeId,
+                key: parsedBody.universeKey,
+                iv: parsedBody.iv,
+                createdAt: new Date()
+            })
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(sendResponse(true, {
+                universeId: universeId
+            }));
+        })
     } else {
         res.writeHead(404, { 'Content-Type': 'application/json' });
         res.end(sendResponse(false, null, "Not Found"));
