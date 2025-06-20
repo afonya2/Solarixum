@@ -757,6 +757,44 @@ const httpServer = http.createServer(async (req, res) => {
             username: user.username,
             createdAt: user.createdAt
         }));
+    } else if (clearUrl == "/api/rooms" && req.method == 'GET') {
+        if (req.headers["protocol"] != PROT_NAME) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(sendResponse(false, null, "Unknown protocol"));
+            return;
+        }
+        if (req.headers["protocol-version"] != PROT_VER) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(sendResponse(false, null, "Unsupported protocol version"));
+            return;
+        }
+        const collection = db.collection("users");
+        const user = await collection.findOne({ token: req.headers["authorization"] });
+        if (user == null) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(sendResponse(false, null, "Invalid token"));
+            return;
+        }
+        if (user.suspended) {
+            res.writeHead(403, { 'Content-Type': 'application/json' });
+            res.end(sendResponse(false, null, "User is suspended"));
+            return;
+        }
+        collection.updateOne({ token: user.token }, { $set: { lastCommunication: new Date() } })
+        const roomsCollection = db.collection("rooms");
+        const rooms = await roomsCollection.find({ members: { $all: [ user.username ] } }).toArray();
+        let resRooms: any[] = [];
+        for (let i = 0; i < rooms.length; i++) {
+            resRooms.push({
+                id: rooms[i].id,
+                name: rooms[i].name,
+                owner: rooms[i].owner,
+                createdAt: rooms[i].createdAt,
+                members: rooms[i].members
+            });
+        }
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(sendResponse(true, resRooms));
     } else {
         res.writeHead(404, { 'Content-Type': 'application/json' });
         res.end(sendResponse(false, null, "Not Found"));

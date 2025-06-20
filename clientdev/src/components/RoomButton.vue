@@ -20,6 +20,7 @@
     display: flex;
     align-items: center;
     box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+    user-select: none;
 }
 .frame[selected="true"] {
     background-color: rgba(50, 50, 50, .5);

@@ -32,6 +32,7 @@
     width: 40px;
     height: 40px;
     border-radius: 50%;
+    user-select: none;
 }
 .message-content {
     margin-left: 10px;

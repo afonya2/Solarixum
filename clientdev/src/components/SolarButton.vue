@@ -17,6 +17,7 @@
     padding: 2px;
     cursor: pointer;
     box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+    user-select: none;
 }
 .frame:hover {
     background-color: rgba(255, 255, 255, 0.1);
