@@ -3,6 +3,7 @@
     import { ref } from 'vue';
     import RecoveryWord from './RecoveryWord.vue';
     import RecoveryKey from './RecoveryKey.vue';
+    import RecoveryReset from './RecoveryReset.vue';
     
     let mainhidden = ref(false);
     let wordhidden = ref(true);
@@ -41,6 +42,7 @@
             </div>
             <RecoveryWord :hidden="wordhidden" />
             <RecoveryKey :hidden="keyhidden" />
+            <RecoveryReset :hidden="resethidden" />
         </main>
     </div>
 </template>

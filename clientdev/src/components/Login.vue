@@ -29,6 +29,7 @@
         let passKey = await utils.derivePasswordKey(password.value)
         let exportedPassKey = await crypto.subtle.exportKey("raw", passKey);
         localStorage.setItem("passwordKey", utils.dataToBase64(exportedPassKey));
+        localStorage.setItem("token", res.body.token);
 
         let key;
         try {
@@ -73,7 +74,6 @@
             window.location.href = ""
             alerthidden.value = false;
         }
-        localStorage.setItem("token", res.body.token);
     }
     function toRegister() {
         localStorage.setItem("state", "2");

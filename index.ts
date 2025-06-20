@@ -1111,6 +1111,102 @@ const httpServer = http.createServer(async (req, res) => {
                 username: targetUser.username
             }));
         })
+    } else if (clearUrl == "/api/reset" && req.method === 'POST') {
+        let body = '';
+        req.on('data', async (data) => {
+            body += data.toString();
+        })
+        req.on('end', async () => {
+            let parsedBody: any;
+            try {
+                parsedBody = JSON.parse(body);
+            } catch (e) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid JSON"));
+                return;
+            }
+            if (parsedBody.protocol != PROT_NAME) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Unknown protocol"));
+                return;
+            }
+            if (parsedBody.protocolVersion != PROT_VER) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Unsupported protocol version"));
+                return;
+            }
+            if (parsedBody.token == undefined || typeof parsedBody.token != "string") {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid token"));
+                return;
+            }
+            if (parsedBody.privateKey == undefined || typeof parsedBody.privateKey != "string") {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid private key"));
+                return;
+            }
+            if (parsedBody.publicKey == undefined || typeof parsedBody.publicKey != "string") {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid public key"));
+                return;
+            }
+            const collection = db.collection("users");
+            const user = await collection.findOne({ token: parsedBody.token });
+            if (user == null) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid token"));
+                return;
+            }
+            if (user.suspended) {
+                res.writeHead(403, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "User is suspended"));
+                return;
+            }
+            let token: string;
+            let check = 0
+            while (true) {
+                token = generateRandomString(256);
+                let existingToken = await collection.findOne({ token: token });
+                if (existingToken == null) {
+                    break;
+                }
+                check++;
+                if (check > 10) {
+                    res.writeHead(500, { 'Content-Type': 'application/json' });
+                    res.end(sendResponse(false, null, "Could not generate token, please try again later..."));
+                    return;
+                }
+            }
+            collection.updateOne({ token: user.token }, {
+                $set: {
+                    lastCommunication: new Date(),
+                    token: token,
+                    privateKey: parsedBody.privateKey,
+                    publicKey: parsedBody.publicKey
+                }
+            })
+            const roomsCollection = db.collection("rooms");
+            const keyCollection = db.collection("roomKeys");
+            const universesCollection = db.collection("universes");
+            const universeKeysCollection = db.collection("universeKeys");
+            const oldRooms = await roomsCollection.find({ members: { $all: [ user.username ] } }).toArray();
+            const oldUniverses = await universesCollection.find({ members: { $all: [ user.username ] } }).toArray();
+            for (let i = 0; i < oldRooms.length; i++) {
+                oldRooms[i].members.splice(oldRooms[i].members.indexOf(user.username), 1);
+                await roomsCollection.updateOne({ id: oldRooms[i].id }, { $set: { members: oldRooms[i].members } });
+            }
+            for (let i = 0; i < oldUniverses.length; i++) {
+                oldUniverses[i].members.splice(oldUniverses[i].members.indexOf(user.username), 1);
+                await universesCollection.updateOne({ id: oldUniverses[i].id }, { $set: { members: oldUniverses[i].members } });
+            }
+            await keyCollection.deleteMany({ user: user.username });
+            await universeKeysCollection.deleteMany({ user: user.username });
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(sendResponse(true, {
+                username: parsedBody.username,
+                token: token
+            }));
+        })
     } else {
         res.writeHead(404, { 'Content-Type': 'application/json' });
         res.end(sendResponse(false, null, "Not Found"));
