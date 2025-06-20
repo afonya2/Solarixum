@@ -250,7 +250,7 @@ const httpServer = http.createServer(async (req, res) => {
                 res.end(sendResponse(false, null, "User is suspended"));
                 return;
             }
-            collection.updateOne({ token: user.token }, { $set: { lastCommunication: new Date() } })
+            collection.updateOne({ token: user.token }, { $set: { lastCommunication: new Date(), lastIP: ip } })
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(sendResponse(true, {
                 username: user.username,
@@ -305,7 +305,7 @@ const httpServer = http.createServer(async (req, res) => {
                 res.end(sendResponse(false, null, "User is suspended"));
                 return;
             }
-            collection.updateOne({ token: user.token }, { $set: { lastCommunication: new Date() } })
+            collection.updateOne({ token: user.token }, { $set: { lastCommunication: new Date(), lastIP: ip } })
             let keyVerifier = generateRandomString(32);
             let encryped = crypto.publicEncrypt({
                 key: base64ToPem(user.publicKey),
@@ -457,7 +457,7 @@ const httpServer = http.createServer(async (req, res) => {
             res.end(sendResponse(false, null, "User is suspended"));
             return;
         }
-        collection.updateOne({ token: user.token }, { $set: { lastCommunication: new Date() } })
+        collection.updateOne({ token: user.token }, { $set: { lastCommunication: new Date(), lastIP: ip } })
         const roomsCollection = db.collection("rooms");
         const room = await roomsCollection.findOne({ id: decodeURIComponent(args.roomId) });
         if (room == null) {
@@ -557,6 +557,7 @@ const httpServer = http.createServer(async (req, res) => {
                 res.end(sendResponse(false, null, "User is suspended"));
                 return;
             }
+            collection.updateOne({ token: user.token }, { $set: { lastCommunication: new Date(), lastIP: ip } })
             const roomsCollection = db.collection("rooms");
             const room = await roomsCollection.findOne({ id: parsedBody.roomId });
             if (room == null) {
@@ -591,7 +592,7 @@ const httpServer = http.createServer(async (req, res) => {
                 roomId: parsedBody.roomId,
                 user: user.username,
                 message: parsedBody.message,
-                createdAt: new Date()
+                createdAt: new Date(),
             })
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(sendResponse(true, {
@@ -627,7 +628,7 @@ const httpServer = http.createServer(async (req, res) => {
             res.end(sendResponse(false, null, "User is suspended"));
             return;
         }
-        collection.updateOne({ token: user.token }, { $set: { lastCommunication: new Date() } })
+        collection.updateOne({ token: user.token }, { $set: { lastCommunication: new Date(), lastIP: ip } })
         const roomsCollection = db.collection("rooms");
         const room = await roomsCollection.findOne({ id: decodeURIComponent(args.roomId) });
         if (room == null) {
@@ -699,7 +700,7 @@ const httpServer = http.createServer(async (req, res) => {
             res.end(sendResponse(false, null, "User is suspended"));
             return;
         }
-        collection.updateOne({ token: user.token }, { $set: { lastCommunication: new Date() } })
+        collection.updateOne({ token: user.token }, { $set: { lastCommunication: new Date(), lastIP: ip } })
         const targetUser = await collection.findOne({ username: decodeURIComponent(args.username) });
         if (targetUser == null) {
             res.writeHead(404, { 'Content-Type': 'application/json' });
@@ -772,7 +773,7 @@ const httpServer = http.createServer(async (req, res) => {
                 res.end(sendResponse(false, null, "User is suspended"));
                 return;
             }
-            collection.updateOne({ token: user.token }, { $set: { lastCommunication: new Date() } })
+            collection.updateOne({ token: user.token }, { $set: { lastCommunication: new Date(), lastIP: ip } })
             const targetUser = await collection.findOne({ username: parsedBody.username });
             if (targetUser == null) {
                 res.writeHead(404, { 'Content-Type': 'application/json' });
@@ -839,7 +840,7 @@ const httpServer = http.createServer(async (req, res) => {
             res.end(sendResponse(false, null, "User is suspended"));
             return;
         }
-        collection.updateOne({ token: user.token }, { $set: { lastCommunication: new Date() } })
+        collection.updateOne({ token: user.token }, { $set: { lastCommunication: new Date(), lastIP: ip } })
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(sendResponse(true, {
             username: user.username,
@@ -868,7 +869,7 @@ const httpServer = http.createServer(async (req, res) => {
             res.end(sendResponse(false, null, "User is suspended"));
             return;
         }
-        collection.updateOne({ token: user.token }, { $set: { lastCommunication: new Date() } })
+        collection.updateOne({ token: user.token }, { $set: { lastCommunication: new Date(), lastIP: ip } })
         const roomsCollection = db.collection("rooms");
         let rooms
         if (args.universeId != undefined) {
@@ -916,7 +917,7 @@ const httpServer = http.createServer(async (req, res) => {
             res.end(sendResponse(false, null, "User is suspended"));
             return;
         }
-        collection.updateOne({ token: user.token }, { $set: { lastCommunication: new Date() } })
+        collection.updateOne({ token: user.token }, { $set: { lastCommunication: new Date(), lastIP: ip } })
         const universesCollection = db.collection("universes");
         const universes = await universesCollection.find({ members: { $all: [ user.username ] } }).toArray();
         let resUniverses: any[] = [];
@@ -987,7 +988,7 @@ const httpServer = http.createServer(async (req, res) => {
                 res.end(sendResponse(false, null, "User is suspended"));
                 return;
             }
-            collection.updateOne({ token: user.token }, { $set: { lastCommunication: new Date() } })
+            collection.updateOne({ token: user.token }, { $set: { lastCommunication: new Date(), lastIP: ip } })
             const universesCollection = db.collection("universes");
             const keyCollection = db.collection("universeKeys");
             const universeId = "&"+ulid();
@@ -1072,7 +1073,7 @@ const httpServer = http.createServer(async (req, res) => {
                 res.end(sendResponse(false, null, "User is suspended"));
                 return;
             }
-            collection.updateOne({ token: user.token }, { $set: { lastCommunication: new Date() } })
+            collection.updateOne({ token: user.token }, { $set: { lastCommunication: new Date(), lastIP: ip } })
             const targetUser = await collection.findOne({ username: parsedBody.username });
             if (targetUser == null) {
                 res.writeHead(404, { 'Content-Type': 'application/json' });
@@ -1180,6 +1181,7 @@ const httpServer = http.createServer(async (req, res) => {
             collection.updateOne({ token: user.token }, {
                 $set: {
                     lastCommunication: new Date(),
+                    lastIP: ip,
                     token: token,
                     privateKey: parsedBody.privateKey,
                     publicKey: parsedBody.publicKey
