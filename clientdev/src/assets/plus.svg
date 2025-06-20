@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- Created with Inkscape (http://www.inkscape.org/) -->
+
+<svg
+   width="512"
+   height="512"
+   viewBox="0 0 512 512"
+   version="1.1"
+   id="svg1"
+   inkscape:version="1.4 (86a8ad7, 2024-10-11)"
+   sodipodi:docname="plus.svg"
+   inkscape:export-filename="plus.png"
+   inkscape:export-xdpi="96"
+   inkscape:export-ydpi="96"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <sodipodi:namedview
+     id="namedview1"
+     pagecolor="#ffffff"
+     bordercolor="#000000"
+     borderopacity="0.25"
+     inkscape:showpageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:document-units="px"
+     inkscape:zoom="1.1865234"
+     inkscape:cx="114.19918"
+     inkscape:cy="320.68477"
+     inkscape:window-width="3440"
+     inkscape:window-height="1417"
+     inkscape:window-x="-8"
+     inkscape:window-y="-8"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="layer1" />
+  <defs
+     id="defs1">
+    <inkscape:perspective
+       sodipodi:type="inkscape:persp3d"
+       inkscape:vp_x="123.04856 : 176.77695 : 1"
+       inkscape:vp_y="0 : 1000 : 0"
+       inkscape:vp_z="635.04856 : 176.77695 : 1"
+       inkscape:persp3d-origin="379.04856 : 91.443625 : 1"
+       id="perspective1" />
+  </defs>
+  <g
+     inkscape:label="Réteg 1"
+     inkscape:groupmode="layer"
+     id="layer1">
+    <rect
+       style="fill:#3264c8;fill-opacity:1;stroke:#3264c8;stroke-width:3;stroke-opacity:1"
+       id="rect7"
+       width="5.9594841"
+       height="426.10312"
+       x="253.02026"
+       y="42.948441"
+       ry="2.9797421" />
+    <rect
+       style="fill:#3264c8;fill-opacity:1;stroke:#3264c8;stroke-width:3;stroke-opacity:1"
+       id="rect7-5"
+       width="5.9594841"
+       height="426.10312"
+       x="-258.97974"
+       y="42.948441"
+       ry="2.9797421"
+       transform="rotate(-90)" />
+  </g>
+</svg>

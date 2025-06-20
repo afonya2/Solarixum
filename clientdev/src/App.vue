@@ -5,6 +5,7 @@
     import UniverseButton from './components/UniverseButton.vue';
     import { Divider, Toast, useToast, InputText, Dialog, Button } from 'primevue';
     import utils from './utils';
+    import plussvg from './assets/plus.svg';
 
     const PROT_NAME = 'Solarixum Protocol';
     const PROT_VER = '0.1.0';
@@ -641,7 +642,7 @@
             <UniverseButton label="Home" icon="../logo.svg" :active="selectedUniverse == -1" @click="selectUniverse(-1)" />
             <Divider />
             <UniverseButton v-for="(universe, i) in universes" :label="universe.label" :icon="universe.icon" :active="universe.active" @click="selectUniverse(i)" />
-            <UniverseButton label="Create Universe" icon="../logo.svg" active="false" @click="newUniverseModal = true" />
+            <UniverseButton label="Create Universe" :icon="plussvg" active="false" @click="newUniverseModal = true" />
         </div>
         <div class="content">
             <div class="content-head">
