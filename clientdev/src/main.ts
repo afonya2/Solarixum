@@ -7,6 +7,7 @@ import { definePreset } from '@primeuix/themes';
 import Login from './components/Login.vue';
 import Recovery from './components/Recovery.vue';
 import Register from './components/Register.vue';
+import { ToastService } from 'primevue';
 
 const Preset = definePreset(Aura, {
     semantic: {
@@ -43,6 +44,7 @@ let app = createApp(Login);
 let state = localStorage.getItem('state');
 if (state == "5") {
     app = createApp(App);
+    app.use(ToastService)
 } else if (state == "3") {
     app = createApp(Recovery)
 } else if (state == "2") {

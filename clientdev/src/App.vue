@@ -3,15 +3,18 @@
     import ChatMessage from './components/ChatMessage.vue';
     import RoomButton from './components/RoomButton.vue';
     import SolarButton from './components/SolarButton.vue';
-    import { Divider, Toast, useToast } from 'primevue';
-import utils from './utils';
+    import { Divider, Toast, useToast, InputText, Dialog, Button } from 'primevue';
+    import utils from './utils';
 
     const PROT_NAME = 'Solarixum Protocol';
     const PROT_VER = '0.1.0';
-    //const toast = useToast()
+    const toast = useToast()
     let messages: Ref<{ username: string, message: string, icon: string, timestamp: number }[]> = ref([])
     let rooms: Ref<{ id: string, label: string, icon: string, active: boolean }[]> = ref([])
     let selectedRoom = 0;
+    let messageInput = ref("")
+    let newRoomModal = ref(false);
+    let roomName = ref("");
 
     function selectRoom(index: number) {
         selectedRoom = index;
@@ -37,7 +40,7 @@ import utils from './utils';
                 window.location.href = "";
                 return
             }
-            //toast.add({ severity: 'error', summary: 'Error', detail: res.error || "An unknown error occurred.", life: 3000 });
+            toast.add({ severity: 'error', summary: 'Error', detail: res.error || "An unknown error occurred.", life: 3000 });
             return;
         }
         console.log(res);
@@ -51,6 +54,7 @@ import utils from './utils';
         selectRoom(0)
     }
     async function getMessages() {
+        messages.value = [];
         if (rooms.value.length <= selectedRoom) {
             return
         }
@@ -77,7 +81,7 @@ import utils from './utils';
                 window.location.href = "";
                 return
             }
-            console.error("Failed to get room:", res1.error);
+            toast.add({ severity: 'error', summary: 'Error', detail: res1.error || "An unknown error occurred.", life: 3000 });
             return;
         }
         console.log(res1);
@@ -110,7 +114,7 @@ import utils from './utils';
                 "decrypt",
             ]);
         } catch (e) {
-            console.error("Failed to decrypt the room key:", e);
+            toast.add({ severity: 'error', summary: 'Error', detail: "Failed to decrypt the room key.", life: 3000 });
             return
         }
 
@@ -129,7 +133,7 @@ import utils from './utils';
                 window.location.href = "";
                 return
             }
-            console.error("Failed to read messages:", res2.error);
+            toast.add({ severity: 'error', summary: 'Error', detail: res2.error || "An unknown error occurred.", life: 3000 });
             return;
         }
         console.log(res2);
@@ -146,14 +150,14 @@ import utils from './utils';
                 );
                 messages.value.push({
                     message: new TextDecoder().decode(decryptedMessage),
-                    username: message.username,
+                    username: message.user,
                     icon: '../logo.svg',
                     timestamp: new Date(message.createdAt).getTime()
                 })
             } catch (e) {
                 messages.value.push({
                     message: "Failed to decrypt message",
-                    username: message.username,
+                    username: message.user,
                     icon: '../logo.svg',
                     timestamp: new Date(message.createdAt).getTime()
                 });
@@ -162,15 +166,17 @@ import utils from './utils';
         console.log("Messages:", messages);
     }
     getRooms()
-    async function createRoom(name: string) {
+    async function createRoom() {
         const token = localStorage.getItem("token");
         const publicKey = localStorage.getItem("publicKey");
         if (!token) {
-            console.error("No token found in local storage.");
+            localStorage.setItem("state", "1")
+            window.location.href = "";
             return;
         }
         if (!publicKey) {
-            console.error("No public key found in local storage.");
+            localStorage.setItem("state", "1")
+            window.location.href = "";
             return;
         }
 
@@ -205,7 +211,7 @@ import utils from './utils';
                 iv
             ); 
         } catch (e) {
-            console.error("Failed to encrypt the room key:", e);
+            toast.add({ severity: 'error', summary: 'Error', detail: "Failed to encrypt the room key.", life: 3000 });
             return
         }
 
@@ -216,7 +222,7 @@ import utils from './utils';
             },
             body: JSON.stringify({
                 token,
-                roomName: name,
+                roomName: roomName.value,
                 roomKey: utils.dataToBase64(encryptedRoomKey),
                 iv: utils.dataToBase64(encryptedIv),
                 protocol: PROT_NAME,
@@ -230,32 +236,145 @@ import utils from './utils';
                 window.location.href = "";
                 return
             }
-            console.error("Room creation failed:", res.error);
+            toast.add({ severity: 'error', summary: 'Error', detail: res.error || "An unknown error occurred.", life: 3000 });
             return;
         }
         console.log(res);
+        roomName.value = "";
+        newRoomModal.value = false;
+        toast.add({ severity: 'success', summary: 'Success', detail: 'Room created successfully!', life: 3000 });
+        getRooms()
+    }
+    async function sendMessage() {
+        const roomId = rooms.value[selectedRoom].id;
+        const token = localStorage.getItem('token');
+        if (!token) {
+            localStorage.setItem("state", "1")
+            window.location.href = "";
+            return
+        }
+        const privateKey = await utils.decryptPrivateKey()
+        if (!privateKey) {
+            localStorage.setItem("state", "1")
+            window.location.href = "";
+            return;
+        }
+
+        let req1 = await fetch(`/api/room/getKey?roomId=${encodeURIComponent(roomId)}`, {
+            method: "GET",
+            headers: {
+                Authorization: token,
+                protocol: PROT_NAME,
+                "protocol-version": PROT_VER,
+            },
+        });
+        let res1 = await req1.json();
+        if (!res1.ok) {
+            if (res1.error === "Invalid token") {
+                localStorage.setItem("state", "1")
+                window.location.href = "";
+                return
+            }
+            toast.add({ severity: 'error', summary: 'Error', detail: res1.error || "An unknown error occurred.", life: 3000 });
+            return;
+        }
+        console.log(res1);
+
+        let encryptedMessage
+        try {
+            let decryptedKey = await crypto.subtle.decrypt(
+                {
+                    name: "RSA-OAEP",
+                },
+                privateKey,
+                utils.base64ToArray(res1.body.key)
+            );
+            let decryptedIv = await crypto.subtle.decrypt(
+                {
+                    name: "RSA-OAEP",
+                },
+                privateKey,
+                utils.base64ToArray(res1.body.iv)
+            );
+            const keyBuffer = await crypto.subtle.importKey("raw", decryptedKey, { name: "AES-CBC" }, false, [
+                "encrypt",
+                "decrypt",
+            ]);
+            encryptedMessage = await crypto.subtle.encrypt(
+                {
+                    name: "AES-CBC",
+                    iv: decryptedIv,
+                },
+                keyBuffer,
+                new TextEncoder().encode(messageInput.value)
+            );
+        } catch (e) {
+            toast.add({ severity: 'error', summary: 'Error', detail: "Failed to encrypt the message.", life: 3000 });
+            return;
+        }
+
+        let req2 = await fetch("/api/room/sendMessage", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+                token,
+                roomId,
+                message: utils.dataToBase64(encryptedMessage),
+                protocol: PROT_NAME,
+                protocolVersion: PROT_VER,
+            }),
+        });
+        let res2 = await req2.json();
+        if (!res2.ok) {
+            if (res2.error === "Invalid token") {
+                localStorage.setItem("state", "1")
+                window.location.href = "";
+                return
+            }
+            toast.add({ severity: 'error', summary: 'Error', detail: res2.error || "An unknown error occurred.", life: 3000 });
+            return;
+        }
+        console.log(res2);
+        messageInput.value = ""
+        getMessages()
     }
 </script>
 
 <template>
     <div class="bg">
         <Toast />
+        <Dialog v-model:visible="newRoomModal" modal header="Create room" style="width: fit-content;">
+            <div class="flex flex-col gap-4">
+                <InputText type="text" placeholder="Room name" style="width: 400px" @keypress.enter = "createRoom()" v-model="roomName" />
+                <Button style="width: fit-content;margin-left: auto;" @click="createRoom()">Create</Button>
+            </div>
+        </Dialog>
         <div class="solar-select">
             <SolarButton label="Home" icon="../logo.svg" active="true" />
             <Divider />
-            <SolarButton label="Home" icon="../logo.svg" active="false" />
-            <SolarButton label="Home" icon="../logo.svg" active="false" />
+            <!--<SolarButton label="Home" icon="../logo.svg" active="false" />
+            <SolarButton label="Home" icon="../logo.svg" active="false" />-->
         </div>
         <div class="content">
             <div class="content-head">
-                <h2 class="text-2xl">Example text</h2>
+                <h2 class="text-2xl">Home</h2>
             </div>
             <div class="room-select">
-                <a href="#" @click="createRoom('test')">Create a room</a>
-                <RoomButton v-for="room of rooms" :label="room.label" :icon="room.icon" :active="room.active" />
+                <div class="flex items-center mb-4">
+                    <h3 class="text-xl text-slate-400 select-none leading-none">Rooms</h3>
+                    <a href="#" @click="newRoomModal = true" class="ml-auto block w-fit select-none"><span class="material-symbols-rounded align-middle">add</span></a>
+                </div>
+                <RoomButton v-for="(room, i) in rooms" :label="room.label" :icon="room.icon" :active="room.active" @click="selectRoom(i)" />
             </div>
             <div class="content-body">
-                <ChatMessage v-for="msg of messages" :username="msg.username" :icon="msg.icon" :message="msg.message" :timestamp="msg.timestamp" />
+                <div class="messages">
+                    <ChatMessage v-for="msg of messages" :username="msg.username" :icon="msg.icon" :message="msg.message" :timestamp="msg.timestamp" />
+                </div>
+                <div class="message-input">
+                    <InputText type="text" placeholder="Send a message..." v-model="messageInput" class="w-full" @keypress.enter="sendMessage()" />
+                </div>
             </div>
         </div>
     </div>
@@ -312,7 +431,6 @@ import utils from './utils';
     width: calc(100% - 350px);
     height: calc(100% - 74px);
     border-bottom-right-radius: 20px;
-    padding: 20px;
 }
 .solar-select {
     position: fixed;
@@ -323,5 +441,21 @@ import utils from './utils';
     z-index: 2;
     margin-left: 5px;
     padding-block: 10px;
+}
+.messages {
+    width: 100%;
+    height: calc(100% - 60px);
+    border-bottom: 3px solid var(--color-slate-900);
+    padding: 20px;
+}
+.message-input {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    height: 60px;
+    padding: 20px;
+    display: flex;
+    align-items: center;
 }
 </style>
