@@ -17,19 +17,20 @@
     margin-bottom: 10px;
     border-radius: 5px;
     cursor: pointer;
-    border: 1px solid rgb(50, 50, 50);
     display: flex;
     align-items: center;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
 }
 .frame[selected="true"] {
-    background-color: rgb(50, 50, 50);
+    background-color: rgba(50, 50, 50, .5);
 }
 .frame:hover {
-    background-color: rgb(50, 50, 50);
+    background-color: rgba(50, 50, 50, .5);
 }
 img {
     width: 40px;
     height: 40px;
+    border-radius: 50%;
 }
 p {
     margin-left: 10px;

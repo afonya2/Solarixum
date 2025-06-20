@@ -10,13 +10,13 @@
 
 <style scoped>
 .frame {
-    margin-top: 5px;
+    margin-bottom: 10px;
     margin-inline: auto;
     width: fit-content;
     border-radius: 10px;
-    border: 1px solid rgb(50, 50, 50);
     padding: 2px;
     cursor: pointer;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
 }
 .frame:hover {
     background-color: rgba(255, 255, 255, 0.1);
