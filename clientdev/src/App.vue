@@ -6,6 +6,7 @@
     import { Divider, Toast, useToast, InputText, Dialog, Button } from 'primevue';
     import utils from './utils';
     import plussvg from './assets/plus.svg';
+import UserCard from './components/UserCard.vue';
 
     const PROT_NAME = 'Solarixum Protocol';
     const PROT_VER = '0.1.0';
@@ -13,6 +14,7 @@
     let messages: Ref<{ username: string, message: string, icon: string, timestamp: number, id: string }[]> = ref([])
     let rooms: Ref<{ id: string, label: string, icon: string, active: boolean }[]> = ref([])
     let universes: Ref<{ id: string, label: string, icon: string, active: boolean }[]> = ref([]);
+    let roomMembers: Ref<{ username: string, icon: string, rank: string }[]> = ref([]);
     let selectedRoom = ref(0);
     let selectedUniverse = ref(-1);
     let messageInput = ref("")
@@ -25,12 +27,46 @@
     let editMessageModal = ref(false);
     let editedMessageId = ref("");
     let editedMessageContent = ref("");
+    let showMembers = ref(false);
 
-    function selectRoom(index: number) {
+    async function selectRoom(index: number) {
+        const token = localStorage.getItem('token');
+        if (!token) {
+            localStorage.setItem("state", "1")
+            window.location.href = "";
+            return
+        }
+        
         selectedRoom.value = index;
         rooms.value.forEach((room, i) => {
             room.active = i === index;
         });
+
+        let req = await fetch(`/api/room/info?roomId=${encodeURIComponent(rooms.value[selectedRoom.value].id)}`, {
+            method: "GET",
+            headers: {
+                'Authorization': localStorage.getItem('token') || '',
+                'protocol': PROT_NAME,
+                'protocol-version': PROT_VER
+            }
+        })
+        let res = await req.json();
+        if (!res.ok) {
+            if (res.error === "Invalid token") {
+                localStorage.setItem("state", "1")
+                window.location.href = "";
+                return
+            }
+            toast.add({ severity: 'error', summary: 'Error', detail: res.error || "An unknown error occurred.", life: 3000 });
+            return;
+        }
+        console.log(res);
+        roomMembers.value = res.body.members.map((member: any) => ({
+            username: member.user,
+            icon: member.icon || '../logo.svg',
+            rank: member.role || 'member'
+        }));
+
         getMessages()
     }
     function selectUniverse(index: number) {
@@ -799,6 +835,11 @@
                 <Button style="width: fit-content;margin-left: auto;" @click="editMessage()">Save</Button>
             </div>
         </Dialog>
+        <Dialog v-model:visible="showMembers" modal :header="`Members of '${selectedRoom < rooms.length ? (selectedUniverse == -1 ? rooms[selectedRoom].label : universes[selectedUniverse].label) : 'Loading...'}'`" style="width: 25%;min-width: fit-content;max-height: 25%;overflow: auto;">
+            <div class="flex flex-col gap-4">
+                <UserCard v-for="member in roomMembers" :label="member.username" :icon="member.icon" :rank="member.rank" />
+            </div>
+        </Dialog>
         <div class="universe-select">
             <UniverseButton label="Home" icon="../logo.svg" :active="selectedUniverse == -1" @click="selectUniverse(-1)" />
             <Divider />
@@ -808,7 +849,8 @@
         <div class="content">
             <div class="content-head">
                 <h2 class="text-2xl">{{ selectedUniverse < universes.length ? (selectedUniverse == -1 ? "Home" : universes[selectedUniverse].label) : "Loading..." }}</h2>
-                <a href="#" class="ml-4" @click="inviteModal = true"><span class="material-symbols-rounded align-middle">person_add</span></a>
+                <Button class="btn ml-auto" @click="inviteModal = true"><span class="material-symbols-rounded align-middle text-slate-300">person_add</span></Button>
+                <Button class="btn" @click="showMembers = true"><span class="material-symbols-rounded align-middle text-slate-300">group</span></Button>
             </div>
             <div class="room-select">
                 <div class="flex items-center mb-4">
@@ -907,5 +949,15 @@
     padding: 20px;
     display: flex;
     align-items: center;
+}
+.btn {
+    background-color: transparent;
+    border: none;
+    padding: 5px;
+}
+.btn:hover {
+    background-color: rgba(255, 255, 255, .1) !important;
+    border: none !important;
+    border-radius: 5px;
 }
 </style>

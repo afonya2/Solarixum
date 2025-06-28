@@ -1141,6 +1141,86 @@ const httpServer = http.createServer(async (req, res) => {
         }
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(sendResponse(true, resRooms));
+    } else if (clearUrl == "/api/room/info" && req.method == 'GET') {
+        if (req.headers["protocol"] != PROT_NAME) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(sendResponse(false, null, "Unknown protocol"));
+            return;
+        }
+        if (req.headers["protocol-version"] != PROT_VER) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(sendResponse(false, null, "Unsupported protocol version"));
+            return;
+        }
+        if (args.roomId == undefined || typeof args.roomId != "string" || !args.roomId.startsWith("#")) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(sendResponse(false, null, "Invalid room ID"));
+            return;
+        }
+        const collection = db.collection("users");
+        const user = await collection.findOne({ token: req.headers["authorization"] });
+        if (user == null) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(sendResponse(false, null, "Invalid token"));
+            return;
+        }
+        if (user.suspended) {
+            res.writeHead(403, { 'Content-Type': 'application/json' });
+            res.end(sendResponse(false, null, "User is suspended"));
+            return;
+        }
+        collection.updateOne({ token: user.token }, { $set: { lastCommunication: new Date(), lastIP: ip } })
+        const roomsCollection = db.collection("rooms");
+        const membersCollection = db.collection("members");
+        const room = await roomsCollection.findOne({ id: decodeURIComponent(args.roomId) });
+        if (room == null) {
+            res.writeHead(404, { 'Content-Type': 'application/json' });
+            res.end(sendResponse(false, null, "Room not found"));
+            return;
+        }
+        let members
+        if (room.universeId != "&0") {
+            const universesCollection = db.collection("universes");
+            const universe = await universesCollection.findOne({ id: room.universeId });
+            if (universe == null) {
+                res.writeHead(404, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Universe not found"));
+                return;
+            }
+            const member = await membersCollection.findOne({ user: user.username, target: universe.id });
+            if (member == null) {
+                res.writeHead(403, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "User is not member of this universe"));
+                return;                    
+            }
+            members = await membersCollection.find({ target: universe.id }).toArray();
+        } else {
+            const member = await membersCollection.findOne({ user: user.username, target: room.id });
+            if (member == null) {
+                res.writeHead(403, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "User is not member of this room"));
+                return;                    
+            }
+            members = await membersCollection.find({ target: room.id }).toArray();
+        }
+        let resMembers: any[] = [];
+        for (let i = 0; i < members.length; i++) {
+            resMembers.push({
+                user: members[i].user,
+                nick: members[i].nick,
+                role: members[i].role,
+                joinedAt: members[i].joinedAt
+            });
+        }
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(sendResponse(true, {
+            id: room.id,
+            name: room.name,
+            owner: room.owner,
+            createdAt: room.createdAt,
+            universeId: room.universeId,
+            members: resMembers
+        }));
     } else if (clearUrl == "/api/universes" && req.method == 'GET') {
         if (req.headers["protocol"] != PROT_NAME) {
             res.writeHead(400, { 'Content-Type': 'application/json' });
