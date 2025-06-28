@@ -37,6 +37,10 @@
     });
     let messagesLoading = ref(false);
     let roomsLoading = ref(false);
+    let socket: WebSocket;
+
+    let channelKey: CryptoKey
+    let channelIv: ArrayBuffer
 
     async function selectRoom(index: number) {
         const token = localStorage.getItem('token');
@@ -184,6 +188,8 @@
             toast.add({ severity: 'error', summary: 'Error', detail: "Failed to decrypt the room key.", life: 3000 });
             return
         }
+        channelKey = keyBuffer
+        channelIv = decryptedIv
 
         let req2 = await fetch(`/api/room/readMessages?roomId=${encodeURIComponent(roomId)}`, {
             method: "GET",
@@ -314,7 +320,7 @@
         roomName.value = "";
         newRoomModal.value = false;
         toast.add({ severity: 'success', summary: 'Success', detail: 'Room created successfully!', life: 3000 });
-        getRooms()
+        //getRooms()
     }
     async function sendMessage() {
         if (selectedRoom.value >= rooms.value.length) {
@@ -413,7 +419,7 @@
         }
         console.log(res2);
         messageInput.value = ""
-        getMessages()
+        //getMessages()
     }
     async function getUniverses() {
         rooms.value = [];
@@ -845,7 +851,126 @@
         showMembers.value = false;
         userModal.value = true;
     }
+    async function connectWs() {
+        const token = localStorage.getItem('token');
+        if (!token) {
+            localStorage.setItem("state", "1")
+            window.location.href = "";
+            return;
+        }
+        socket = new WebSocket(`ws://${window.location.host}/ws`);
+        socket.onopen = () => {
+            console.log("WebSocket connection established");
+            socket.send(JSON.stringify({
+                type: "auth",
+                token: token,
+                protocol: PROT_NAME,
+                protocolVersion: PROT_VER
+            }));
+            setInterval(() => {
+                if (socket.readyState === WebSocket.OPEN) {
+                    socket.send(JSON.stringify({
+                        type: "heartbeat",
+                        protocol: PROT_NAME,
+                        protocolVersion: PROT_VER
+                    }));
+                }
+            }, 60000)
+        };
+        socket.onmessage = async (event) => {
+            let data
+            try {
+                data = JSON.parse(event.data);
+            } catch (e) {
+                console.error("Failed to parse WebSocket message:", e);
+                return;
+            }
+            if (data.protocol != PROT_NAME) {
+                toast.add({ severity: 'error', summary: 'Error', detail: `Server uses unsupported protocol.`, life: 3000 });
+                return;
+            }
+            if (data.protocolVersion != PROT_VER) {
+                toast.add({ severity: 'error', summary: 'Error', detail: `Server uses unsupported protocol version.`, life: 3000 });
+                return;
+            }
+            if (data.type == "error") {
+                console.error("WebSocket error:", data.message);
+                toast.add({ severity: 'error', summary: 'Error', detail: data.error || "An unknown error occurred.", life: 3000 });
+                return;
+            } else if (data.type == "message") {
+                let currentRoom = rooms.value[selectedRoom.value];
+                if (currentRoom && currentRoom.id == data.roomId) {
+                    try {
+                        const decryptedMessage = await crypto.subtle.decrypt(
+                            {
+                                name: "AES-CBC",
+                                iv: channelIv,
+                            },
+                            channelKey,
+                            utils.base64ToData(data.message)
+                        );
+                        messages.value.push({
+                            message: new TextDecoder().decode(decryptedMessage),
+                            username: data.user,
+                            icon: '../logo.svg',
+                            timestamp: new Date(data.createdAt).getTime(),
+                            id: data.id
+                        })
+                    } catch (e) {
+                        messages.value.push({
+                            message: "Failed to decrypt message",
+                            username: data.user,
+                            icon: '../logo.svg',
+                            timestamp: new Date(data.createdAt).getTime(),
+                            id: data.id
+                        });
+                    }
+                }
+            } else if (data.type == "roomInvite") {
+                if (selectedUniverse.value == -1) {
+                    rooms.value.push({
+                        id: data.roomId,
+                        label: data.roomName,
+                        icon: '../logo.svg',
+                        active: false
+                    })
+                }
+            } else if (data.type == "universeInvite") {
+                universes.value.push({
+                    id: data.universeId,
+                    label: data.universeName,
+                    icon: '../logo.svg',
+                    active: false
+                })
+            } else if (data.type == "roomCreated") {
+                if (data.universeId == "&0" && selectedUniverse.value == -1) {
+                    rooms.value.push({
+                        id: data.roomId,
+                        label: data.roomName,
+                        icon: '../logo.svg',
+                        active: false
+                    })
+                } else if (data.universeId == universes.value[selectedUniverse.value].id) {
+                    rooms.value.push({
+                        id: data.roomId,
+                        label: data.roomName,
+                        icon: '../logo.svg',
+                        active: false
+                    })
+                }
+            }
+        }
+        socket.onclose = (event) => {
+            console.log("WebSocket connection closed:", event);
+            toast.add({ severity: 'error', summary: 'Error', detail: 'WebSocket connection lost. Please refresh the page.', life: 5000 });
+        };
+        socket.onerror = (error) => {
+            console.error("WebSocket error:", error);
+            toast.add({ severity: 'error', summary: 'Error', detail: 'WebSocket error occurred. Please refresh the page.', life: 5000 });
+        };
+    }
     getUniverses()
+    connectWs()
 </script>
 
 <template>

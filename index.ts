@@ -6,6 +6,7 @@ import fs from 'fs';
 import path from 'path';
 import { MongoClient } from 'mongodb'
 import { ulid } from 'ulid';
+import WebSocket from 'ws';
 
 const VER = '0.1.0';
 const SERV_NAME = 'Solarixum Server';
@@ -44,6 +45,59 @@ function base64ToPem(base64: string): string {
     const lines = base64.match(/.{1,64}/g)?.join('\n') || '';
     return `-----BEGIN PUBLIC KEY-----\n${lines}\n-----END PUBLIC KEY-----`;
 }
+
+let sockets: {[key: string]: { ws: WebSocket, token: string, username: string, lastHeartBeat: number }} = {}
+async function transmitRoomUpdate(id: string, data: string) {
+    const membersCollection = db.collection("members");
+    const roomCollection = db.collection("rooms");
+    const room = await roomCollection.findOne({ id: id });
+    if (room == null) {
+        return;
+    }
+    let members
+    if (room.universeId != "&0") {
+        members = await membersCollection.find({ target: room.universeId }).toArray();
+    } else {
+        members = await membersCollection.find({ target: id }).toArray();
+    }
+    const memNames = members.map((member: any) => member.user)
+    for (let i in sockets) {
+        if (memNames.includes(sockets[i].username)) {
+            sockets[i].ws.send(data)
+        }
+    }
+}
+async function transmitUniverseUpdate(id: string, data: string) {
+    const membersCollection = db.collection("members");
+    const universeCollection = db.collection("universes");
+    const universe = await universeCollection.findOne({ id: id });
+    if (universe == null) {
+        return;
+    }
+    const members = await membersCollection.find({ target: id }).toArray();
+    const memNames = members.map((member: any) => member.user)
+    for (let i in sockets) {
+        if (memNames.includes(sockets[i].username)) {
+            sockets[i].ws.send(data)
+        }
+    }
+}
+async function transmitToUser(username: string, data: string) {
+    for (let i in sockets) {
+        if (sockets[i].username == username) {
+            sockets[i].ws.send(data);
+        }
+    }
+}
+setInterval(() => {
+    for (let sid in sockets) {
+        if (sockets[sid].lastHeartBeat < Date.now() - 120000) {
+            console.log(`Socket ${sid} timed out, closing...`);
+            sockets[sid].ws.close();
+            delete sockets[sid];
+        }
+    }
+}, 1000)
 
 const httpServer = http.createServer(async (req, res) => {
     const clearUrl = req.url?.split('?')[0];
@@ -407,7 +461,14 @@ const httpServer = http.createServer(async (req, res) => {
                     createdAt: new Date(),
                     universeId: decodeURIComponent(args.universeId)
                 })
-                universesCollection.updateOne({ id: decodeURIComponent(args.universeId) }, { $addToSet: { rooms: roomId } })
+                transmitUniverseUpdate(universe.id, JSON.stringify({
+                    type: "roomCreated",
+                    roomId: roomId,
+                    roomName: parsedBody.roomName,
+                    universeId: decodeURIComponent(args.universeId),
+                    protocol: PROT_NAME,
+                    protocolVersion: PROT_VER
+                }))
             } else {
                 roomsCollection.insertOne({
                     id: roomId,
@@ -430,6 +491,14 @@ const httpServer = http.createServer(async (req, res) => {
                     role: "owner",
                     joinedAt: new Date()
                 })
+                transmitToUser(user.username, JSON.stringify({
+                    type: "roomCreated",
+                    roomId: roomId,
+                    roomName: parsedBody.roomName,
+                    universeId: "&0",
+                    protocol: PROT_NAME,
+                    protocolVersion: PROT_VER
+                }))
             }
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(sendResponse(true, {
@@ -609,6 +678,17 @@ const httpServer = http.createServer(async (req, res) => {
                 edits: [],
                 deleted: false
             })
+            transmitRoomUpdate(parsedBody.roomId, JSON.stringify({
+                type: "message",
+                roomId: parsedBody.roomId,
+                id: messageId,
+                user: user.username,
+                message: parsedBody.message,
+                createdAt: new Date(),
+                edits: [],
+                protocol: PROT_NAME,
+                protocolVersion: PROT_VER
+            }))
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(sendResponse(true, {
                 messageId: messageId,
@@ -1049,6 +1129,13 @@ const httpServer = http.createServer(async (req, res) => {
                 iv: parsedBody.iv,
                 createdAt: new Date()
             })
+            transmitToUser(targetUser.username, JSON.stringify({
+                type: "roomInvite",
+                roomId: parsedBody.roomId,
+                roomName: room.name,
+                protocol: PROT_NAME,
+                protocolVersion: PROT_VER
+            }))
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(sendResponse(true, {
                 roomId: parsedBody.roomId,
@@ -1457,6 +1544,13 @@ const httpServer = http.createServer(async (req, res) => {
                 iv: parsedBody.iv,
                 createdAt: new Date()
             })
+            transmitToUser(targetUser.username, JSON.stringify({
+                type: "universeInvite",
+                universeId: parsedBody.universeId,
+                universeName: universe.name,
+                protocol: PROT_NAME,
+                protocolVersion: PROT_VER
+            }))
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(sendResponse(true, {
                 universeId: parsedBody.universeId,
@@ -1599,6 +1693,95 @@ const httpServer = http.createServer(async (req, res) => {
 const wsServer = new WebSocketServer({
     server: httpServer,
     path: '/ws'
+})
+wsServer.on('connection', (socket) => {
+    let id = ulid()
+    sockets[id] = {
+        ws: socket,
+        token: "",
+        username: "",
+        lastHeartBeat: Date.now()
+    }
+    console.log(`New socket: ${id}`);
+    socket.on('close', () => {
+        console.log(`Socket closed: ${id}`);
+        delete sockets[id];
+    })
+    socket.on('message', async (rawdata) => {
+        let data
+        try {
+            data = JSON.parse(rawdata.toString());
+        } catch (e) {
+            console.error(`Invalid JSON from socket ${id}:`, e);
+            return;
+        }
+        if (data.protocol != PROT_NAME) {
+            socket.send(JSON.stringify({
+                type: "error",
+                error: "Unknown protocol",
+                protocol: PROT_NAME,
+                protocolVersion: PROT_VER
+            }));
+        }
+        if (data.protocolVersion != PROT_VER) {
+            socket.send(JSON.stringify({
+                type: "error",
+                error: "Unsupported protocol version",
+                protocol: PROT_NAME,
+                protocolVersion: PROT_VER
+            }));
+        }
+        if (data.type == "auth") {
+            if (data.token == undefined || typeof data.token != "string") {
+                socket.send(JSON.stringify({
+                    type: "error",
+                    error: "Invalid token",
+                    protocol: PROT_NAME,
+                    protocolVersion: PROT_VER
+                }));
+                socket.close();
+                return
+            }
+            const collection = db.collection("users");
+            const user = await collection.findOne({ token: data.token });
+            if (user == null) {
+                socket.send(JSON.stringify({
+                    type: "error",
+                    error: "User not found",
+                    protocol: PROT_NAME,
+                    protocolVersion: PROT_VER
+                }));
+                socket.close();
+                return;
+            }
+            if (user.suspended) {
+                socket.send(JSON.stringify({
+                    type: "error",
+                    error: "User is suspended",
+                    protocol: PROT_NAME,
+                    protocolVersion: PROT_VER
+                }));
+                socket.close();
+                return;
+            }
+            collection.updateOne({ token: user.token }, { $set: { lastCommunication: new Date() } })
+            sockets[id].token = data.token;
+            sockets[id].username = user.username;
+            socket.send(JSON.stringify({
+                type: "auth",
+                protocol: PROT_NAME,
+                protocolVersion: PROT_VER,
+                username: user.username
+            }));
+        } else if (data.type == "heartbeat") {
+            sockets[id].lastHeartBeat = Date.now();
+            socket.send(JSON.stringify({
+                type: "heartbeat",
+                protocol: PROT_NAME,
+                protocolVersion: PROT_VER
+            }));
+        }
+    })
 })
 
 
