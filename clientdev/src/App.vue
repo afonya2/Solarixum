@@ -6,8 +6,8 @@
     import { Divider, Toast, useToast, InputText, Dialog, Button } from 'primevue';
     import utils from './utils';
     import plussvg from './assets/plus.svg';
-import UserCard from './components/UserCard.vue';
-import UserInformation from './components/UserInformation.vue';
+    import UserCard from './components/UserCard.vue';
+    import UserInformation from './components/UserInformation.vue';
 
     const PROT_NAME = 'Solarixum Protocol';
     const PROT_VER = '0.1.0';
@@ -35,6 +35,8 @@ import UserInformation from './components/UserInformation.vue';
         icon: '../logo.svg',
         bio: 'This is a user bio.'
     });
+    let messagesLoading = ref(false);
+    let roomsLoading = ref(false);
 
     async function selectRoom(index: number) {
         const token = localStorage.getItem('token');
@@ -84,7 +86,7 @@ import UserInformation from './components/UserInformation.vue';
         getRooms()
     }
     async function getRooms() {
-        rooms.value = [];
+        roomsLoading.value = true;
         if (universes.value.length <= selectedUniverse.value && selectedUniverse.value != -1) {
             return
         }
@@ -115,10 +117,11 @@ import UserInformation from './components/UserInformation.vue';
             icon: '../logo.svg',
             active: false
         }));
+        roomsLoading.value = false;
         selectRoom(0)
     }
     async function getMessages() {
-        messages.value = [];
+        messagesLoading.value = true;
         if (rooms.value.length <= selectedRoom.value) {
             return
         }
@@ -201,6 +204,7 @@ import UserInformation from './components/UserInformation.vue';
             return;
         }
         console.log(res2);
+        let preMessages: { username: string, message: string, icon: string, timestamp: number, id: string }[] = [];
         for (let i = 0; i < res2.body.messages.length; i++) {
             const message = res2.body.messages[i];
             try {
@@ -212,7 +216,7 @@ import UserInformation from './components/UserInformation.vue';
                     keyBuffer,
                     utils.base64ToData(message.message)
                 );
-                messages.value.push({
+                preMessages.push({
                     message: new TextDecoder().decode(decryptedMessage),
                     username: message.user,
                     icon: '../logo.svg',
@@ -220,7 +224,7 @@ import UserInformation from './components/UserInformation.vue';
                     id: message.id
                 })
             } catch (e) {
-                messages.value.push({
+                preMessages.push({
                     message: "Failed to decrypt message",
                     username: message.user,
                     icon: '../logo.svg',
@@ -229,7 +233,9 @@ import UserInformation from './components/UserInformation.vue';
                 });
             }
         }
-        console.log("Messages:", messages);
+        messages.value = preMessages;
+        messagesLoading.value = false;
+        console.log("Messages:", messages.value);
     }
     async function createRoom() {
         const token = localStorage.getItem("token");
@@ -877,7 +883,7 @@ import UserInformation from './components/UserInformation.vue';
         <Dialog v-model:visible="userModal" modal :header="`Profile of '${userInfo.username.substring(1)}'`" style="width: fit-content;">
             <UserInformation :label="userInfo.username" :icon="userInfo.icon" :bio="userInfo.bio" />
         </Dialog>
-        <div class="universe-select">
+        <div class="universe-select overflow-auto">
             <UniverseButton label="Home" icon="../logo.svg" :active="selectedUniverse == -1" @click="selectUniverse(-1)" />
             <Divider />
             <UniverseButton v-for="(universe, i) in universes" :label="universe.label" :icon="universe.icon" :active="universe.active" @click="selectUniverse(i)" />
@@ -889,16 +895,18 @@ import UserInformation from './components/UserInformation.vue';
                 <Button class="btn ml-auto" @click="inviteModal = true"><span class="material-symbols-rounded align-middle text-slate-300">person_add</span></Button>
                 <Button class="btn" @click="showMembers = true"><span class="material-symbols-rounded align-middle text-slate-300">group</span></Button>
             </div>
-            <div class="room-select">
+            <div class="room-select overflow-auto">
                 <div class="flex items-center mb-4">
                     <h3 class="text-xl text-slate-400 select-none leading-none">Rooms</h3>
                     <a href="#" @click="newRoomModal = true" class="ml-auto block w-fit select-none"><span class="material-symbols-rounded align-middle">add</span></a>
                 </div>
-                <RoomButton v-for="(room, i) in rooms" :label="room.label" :icon="room.icon" :active="room.active" @click="selectRoom(i)" />
+                <RoomButton v-for="_ in 10" v-if="roomsLoading" loading="true" />
+                <RoomButton v-for="(room, i) in rooms" :label="room.label" :icon="room.icon" :active="room.active" @click="selectRoom(i)" :hidden="roomsLoading" loading="false" />
             </div>
             <div class="content-body">
-                <div class="messages">
-                    <ChatMessage v-for="msg of messages" :username="msg.username" :icon="msg.icon" :message="msg.message" :timestamp="msg.timestamp" :id="msg.id" @edit-message="beginEditMessage(msg.id)" @delete-message="deleteMessage(msg.id)" @user-info="selectMember(msg.username)" />
+                <div class="messages overflow-auto">
+                    <ChatMessage v-for="_ in 10" v-if="messagesLoading" loading="true" />
+                    <ChatMessage v-for="msg of messages" :username="msg.username" :icon="msg.icon" :message="msg.message" :timestamp="msg.timestamp" :id="msg.id" @edit-message="beginEditMessage(msg.id)" @delete-message="deleteMessage(msg.id)" @user-info="selectMember(msg.username)" :hidden="messagesLoading" loading="false" />
                 </div>
                 <div class="message-input">
                     <InputText type="text" placeholder="Send a message..." v-model="messageInput" class="w-full" @keypress.enter="sendMessage()" />

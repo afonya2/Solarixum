@@ -1,6 +1,6 @@
 <script setup lang="ts">
-    import { Button } from 'primevue';
-    let props = defineProps(["username", "icon", "message", "timestamp"]);
+    import { Button, Skeleton } from 'primevue';
+    let props = defineProps(["username", "icon", "message", "timestamp", "loading"]);
     let emits = defineEmits(["editMessage", "deleteMessage", "userInfo"]);
 
     async function editMessage() {
@@ -13,15 +13,19 @@
 
 <template>
     <div class="frame">
-        <img :src="props.icon" :alt="props.username" :title="props.username" class="icon" draggable="false" />
+        <img :src="props.icon" :alt="props.username" :title="props.username" class="icon" draggable="false" v-if="props.loading == 'false'" />
+        <Skeleton shape="circle" size="50px" v-if="props.loading == 'true'" />
         <div class="message-content">
             <div class="username-part">
-                <p class="username" @click="emits('userInfo')">{{ props.username }}</p>
-                <p class="timestamp">{{ new Date(Number(props.timestamp)).toLocaleString() }}</p>
+                <p class="username" @click="emits('userInfo')" v-if="props.loading == 'false'">{{ props.username }}</p>
+                <p class="timestamp" v-if="props.loading == 'false'">{{ new Date(Number(props.timestamp)).toLocaleString() }}</p>
+                <Skeleton class="username" style="width: 150px;" v-if="props.loading == 'true'" />
+                <Skeleton class="timestamp" style="width: 150px;" v-if="props.loading == 'true'" />
             </div>
-            <p class="message">{{ props.message }}</p>
+            <p class="message" v-if="props.loading == 'false'">{{ props.message }}</p>
+            <Skeleton class="message" style="width: 500px;" v-if="props.loading == 'true'" />
         </div>
-        <div class="msg-options">
+        <div class="msg-options" :hidden="props.loading == 'true'">
             <Button class="btn" @click="editMessage()">
                 <span class="material-symbols-rounded text-slate-300">
                     edit

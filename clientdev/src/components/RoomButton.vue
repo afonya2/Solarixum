@@ -1,11 +1,14 @@
 <script setup lang="ts">
-    let props = defineProps(["label", "icon", "active"]);
+    import { Skeleton } from 'primevue';
+    let props = defineProps(["label", "icon", "active", "loading"]);
 </script>
 
 <template>
     <div class="frame" :selected="props.active">
-        <img :src="props.icon" :alt="props.label" :title="props.label" class="icon" draggable="false" />
-        <p>{{ props.label }}</p>
+        <img :src="props.icon" :alt="props.label" :title="props.label" class="icon" draggable="false" v-if="props.loading == 'false'" />
+        <p v-if="props.loading == 'false'">{{ props.label }}</p>
+        <Skeleton class="icon" style="width: 40px; height: 40px;" shape="circle" v-if="props.loading == 'true'" />
+        <Skeleton style="width: 150px;margin-left: 10px;" v-if="props.loading == 'true'" />
     </div>
 </template>
 
