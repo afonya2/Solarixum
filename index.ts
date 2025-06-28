@@ -380,6 +380,7 @@ const httpServer = http.createServer(async (req, res) => {
             const roomsCollection = db.collection("rooms");
             const keyCollection = db.collection("roomKeys");
             const universesCollection = db.collection("universes");
+            const membersCollection = db.collection("members");
             const roomId = "#"+ulid();
             if (args.universeId != undefined) {
                 if (typeof args.universeId != "string" || !args.universeId.startsWith("&")) {
@@ -393,7 +394,8 @@ const httpServer = http.createServer(async (req, res) => {
                     res.end(sendResponse(false, null, "Universe not found"));
                     return;
                 }
-                if (!universe.members.includes(user.username)) {
+                const member = await membersCollection.findOne({ user: user.username, target: universe.id });
+                if (member == null) {
                     res.writeHead(403, { 'Content-Type': 'application/json' });
                     res.end(sendResponse(false, null, "User is not member of this universe"));
                     return;                    
@@ -403,7 +405,6 @@ const httpServer = http.createServer(async (req, res) => {
                     name: parsedBody.roomName,
                     owner: user.username,
                     createdAt: new Date(),
-                    members: [],
                     universeId: decodeURIComponent(args.universeId)
                 })
                 universesCollection.updateOne({ id: decodeURIComponent(args.universeId) }, { $addToSet: { rooms: roomId } })
@@ -413,7 +414,6 @@ const httpServer = http.createServer(async (req, res) => {
                     name: parsedBody.roomName,
                     owner: user.username,
                     createdAt: new Date(),
-                    members: [user.username],
                     universeId: "&0"
                 })
                 keyCollection.insertOne({
@@ -422,6 +422,13 @@ const httpServer = http.createServer(async (req, res) => {
                     key: parsedBody.roomKey,
                     iv: parsedBody.iv,
                     createdAt: new Date()
+                })
+                membersCollection.insertOne({
+                    user: user.username,
+                    target: roomId,
+                    nick: "",
+                    role: "owner",
+                    joinedAt: new Date()
                 })
             }
             res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -459,6 +466,7 @@ const httpServer = http.createServer(async (req, res) => {
         }
         collection.updateOne({ token: user.token }, { $set: { lastCommunication: new Date(), lastIP: ip } })
         const roomsCollection = db.collection("rooms");
+        const membersCollection = db.collection("members");
         const room = await roomsCollection.findOne({ id: decodeURIComponent(args.roomId) });
         if (room == null) {
             res.writeHead(404, { 'Content-Type': 'application/json' });
@@ -474,10 +482,11 @@ const httpServer = http.createServer(async (req, res) => {
                 res.end(sendResponse(false, null, "Universe not found"));
                 return;
             }
-            if (!universe.members.includes(user.username)) {
+            const member = await membersCollection.findOne({ user: user.username, target: universe.id });
+            if (member == null) {
                 res.writeHead(403, { 'Content-Type': 'application/json' });
                 res.end(sendResponse(false, null, "User is not member of this universe"));
-                return;
+                return;                    
             }
             const keyCollection = db.collection("universeKeys");
             key = await keyCollection.findOne({ user: user.username, universeId: universe.id });
@@ -487,10 +496,11 @@ const httpServer = http.createServer(async (req, res) => {
                 return;
             }
         } else {
-            if (!room.members.includes(user.username)) {
+            const member = await membersCollection.findOne({ user: user.username, target: room.id });
+            if (member == null) {
                 res.writeHead(403, { 'Content-Type': 'application/json' });
                 res.end(sendResponse(false, null, "User is not member of this room"));
-                return;
+                return;                    
             }
             const keyCollection = db.collection("roomKeys");
             key = await keyCollection.findOne({ user: user.username, roomId: args.roomId });
@@ -559,6 +569,7 @@ const httpServer = http.createServer(async (req, res) => {
             }
             collection.updateOne({ token: user.token }, { $set: { lastCommunication: new Date(), lastIP: ip } })
             const roomsCollection = db.collection("rooms");
+            const membersCollection = db.collection("members");
             const room = await roomsCollection.findOne({ id: parsedBody.roomId });
             if (room == null) {
                 res.writeHead(404, { 'Content-Type': 'application/json' });
@@ -573,16 +584,18 @@ const httpServer = http.createServer(async (req, res) => {
                     res.end(sendResponse(false, null, "Universe not found"));
                     return;
                 }
-                if (!universe.members.includes(user.username)) {
+                const member = await membersCollection.findOne({ user: user.username, target: universe.id });
+                if (member == null) {
                     res.writeHead(403, { 'Content-Type': 'application/json' });
                     res.end(sendResponse(false, null, "User is not member of this universe"));
-                    return;
+                    return;                    
                 }
             } else {
-                if (!room.members.includes(user.username)) {
+                const member = await membersCollection.findOne({ user: user.username, target: room.id });
+                if (member == null) {
                     res.writeHead(403, { 'Content-Type': 'application/json' });
                     res.end(sendResponse(false, null, "User is not member of this room"));
-                    return;
+                    return;                    
                 }
             }
             const messagesCollection = db.collection("messages");
@@ -660,6 +673,7 @@ const httpServer = http.createServer(async (req, res) => {
             }
             collection.updateOne({ token: user.token }, { $set: { lastCommunication: new Date(), lastIP: ip } })
             const roomsCollection = db.collection("rooms");
+            const membersCollection = db.collection("members");
             const room = await roomsCollection.findOne({ id: parsedBody.roomId });
             if (room == null) {
                 res.writeHead(404, { 'Content-Type': 'application/json' });
@@ -674,16 +688,18 @@ const httpServer = http.createServer(async (req, res) => {
                     res.end(sendResponse(false, null, "Universe not found"));
                     return;
                 }
-                if (!universe.members.includes(user.username)) {
+                const member = await membersCollection.findOne({ user: user.username, target: universe.id });
+                if (member == null) {
                     res.writeHead(403, { 'Content-Type': 'application/json' });
                     res.end(sendResponse(false, null, "User is not member of this universe"));
-                    return;
+                    return;                    
                 }
             } else {
-                if (!room.members.includes(user.username)) {
+                const member = await membersCollection.findOne({ user: user.username, target: room.id });
+                if (member == null) {
                     res.writeHead(403, { 'Content-Type': 'application/json' });
                     res.end(sendResponse(false, null, "User is not member of this room"));
-                    return;
+                    return;                    
                 }
             }
             const messagesCollection = db.collection("messages");
@@ -758,6 +774,7 @@ const httpServer = http.createServer(async (req, res) => {
             }
             collection.updateOne({ token: user.token }, { $set: { lastCommunication: new Date(), lastIP: ip } })
             const roomsCollection = db.collection("rooms");
+            const membersCollection = db.collection("members");
             const room = await roomsCollection.findOne({ id: parsedBody.roomId });
             if (room == null) {
                 res.writeHead(404, { 'Content-Type': 'application/json' });
@@ -772,16 +789,18 @@ const httpServer = http.createServer(async (req, res) => {
                     res.end(sendResponse(false, null, "Universe not found"));
                     return;
                 }
-                if (!universe.members.includes(user.username)) {
+                const member = await membersCollection.findOne({ user: user.username, target: universe.id });
+                if (member == null) {
                     res.writeHead(403, { 'Content-Type': 'application/json' });
                     res.end(sendResponse(false, null, "User is not member of this universe"));
-                    return;
+                    return;                    
                 }
             } else {
-                if (!room.members.includes(user.username)) {
+                const member = await membersCollection.findOne({ user: user.username, target: room.id });
+                if (member == null) {
                     res.writeHead(403, { 'Content-Type': 'application/json' });
                     res.end(sendResponse(false, null, "User is not member of this room"));
-                    return;
+                    return;                    
                 }
             }
             const messagesCollection = db.collection("messages");
@@ -833,6 +852,7 @@ const httpServer = http.createServer(async (req, res) => {
         }
         collection.updateOne({ token: user.token }, { $set: { lastCommunication: new Date(), lastIP: ip } })
         const roomsCollection = db.collection("rooms");
+        const membersCollection = db.collection("members");
         const room = await roomsCollection.findOne({ id: decodeURIComponent(args.roomId) });
         if (room == null) {
             res.writeHead(404, { 'Content-Type': 'application/json' });
@@ -847,16 +867,18 @@ const httpServer = http.createServer(async (req, res) => {
                 res.end(sendResponse(false, null, "Universe not found"));
                 return;
             }
-            if (!universe.members.includes(user.username)) {
+            const member = await membersCollection.findOne({ user: user.username, target: universe.id });
+            if (member == null) {
                 res.writeHead(403, { 'Content-Type': 'application/json' });
                 res.end(sendResponse(false, null, "User is not member of this universe"));
-                return;
+                return;                    
             }
         } else {
-            if (!room.members.includes(user.username)) {
+            const member = await membersCollection.findOne({ user: user.username, target: room.id });
+            if (member == null) {
                 res.writeHead(403, { 'Content-Type': 'application/json' });
                 res.end(sendResponse(false, null, "User is not member of this room"));
-                return;
+                return;                    
             }
         }
         const messagesCollection = db.collection("messages");
@@ -988,6 +1010,7 @@ const httpServer = http.createServer(async (req, res) => {
                 return;
             }
             const roomsCollection = db.collection("rooms");
+            const membersCollection = db.collection("members");
             const room = await roomsCollection.findOne({ id: parsedBody.roomId });
             if (room == null) {
                 res.writeHead(404, { 'Content-Type': 'application/json' });
@@ -999,17 +1022,25 @@ const httpServer = http.createServer(async (req, res) => {
                 res.end(sendResponse(false, null, "Unable to invite users to universe rooms, use /api/universe/invite instead"));
                 return;
             }
-            if (!room.members.includes(user.username)) {
+            const member = await membersCollection.findOne({ user: user.username, target: room.id });
+            if (member == null) {
                 res.writeHead(403, { 'Content-Type': 'application/json' });
                 res.end(sendResponse(false, null, "User is not member of this room"));
-                return;
+                return;                    
             }
-            if (room.members.includes(targetUser.username)) {
+            const targetMember = await membersCollection.findOne({ user: targetUser.username, target: room.id });
+            if (targetMember != null) {
                 res.writeHead(400, { 'Content-Type': 'application/json' });
                 res.end(sendResponse(false, null, "User is already member of this room"));
                 return;
             }
-            roomsCollection.updateOne({ id: parsedBody.roomId }, { $addToSet: { members: targetUser.username } })
+            membersCollection.insertOne({
+                user: targetUser.username,
+                target: room.id,
+                nick: "",
+                role: "member",
+                joinedAt: new Date()
+            })
             const keyCollection = db.collection("roomKeys");
             keyCollection.insertOne({
                 user: targetUser.username,
@@ -1078,6 +1109,7 @@ const httpServer = http.createServer(async (req, res) => {
         }
         collection.updateOne({ token: user.token }, { $set: { lastCommunication: new Date(), lastIP: ip } })
         const roomsCollection = db.collection("rooms");
+        const membersCollection = db.collection("members");
         let rooms
         if (args.universeId != undefined) {
             if (typeof args.universeId != "string" || !args.universeId.startsWith("&")) {
@@ -1087,7 +1119,16 @@ const httpServer = http.createServer(async (req, res) => {
             }
             rooms = await roomsCollection.find({ universeId: decodeURIComponent(args.universeId) }).toArray();
         } else {
-            rooms = await roomsCollection.find({ members: { $all: [ user.username ] }, universeId: "&0" }).toArray();
+            const roomIds = await membersCollection.find({ user: user.username }).toArray();
+            rooms = []
+            for (let i = 0; i < roomIds.length; i++) {
+                if (roomIds[i].target.startsWith("#")) {
+                    const room = await roomsCollection.findOne({ id: roomIds[i].target });
+                    if (room != null) {
+                        rooms.push(room);
+                    }
+                }
+            }
         }
         let resRooms: any[] = [];
         for (let i = 0; i < rooms.length; i++) {
@@ -1095,8 +1136,7 @@ const httpServer = http.createServer(async (req, res) => {
                 id: rooms[i].id,
                 name: rooms[i].name,
                 owner: rooms[i].owner,
-                createdAt: rooms[i].createdAt,
-                members: rooms[i].members
+                createdAt: rooms[i].createdAt
             });
         }
         res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -1126,15 +1166,24 @@ const httpServer = http.createServer(async (req, res) => {
         }
         collection.updateOne({ token: user.token }, { $set: { lastCommunication: new Date(), lastIP: ip } })
         const universesCollection = db.collection("universes");
-        const universes = await universesCollection.find({ members: { $all: [ user.username ] } }).toArray();
+        const membersCollection = db.collection("members");
+        let universes: any[] = []
+        const universeIds = await membersCollection.find({ user: user.username }).toArray();
+        for (let i = 0; i < universeIds.length; i++) {
+            if (universeIds[i].target.startsWith("&")) {
+                const universe = await universesCollection.findOne({ id: universeIds[i].target });
+                if (universe != null) {
+                    universes.push(universe);
+                }
+            }
+        }
         let resUniverses: any[] = [];
         for (let i = 0; i < universes.length; i++) {
             resUniverses.push({
                 id: universes[i].id,
                 name: universes[i].name,
                 owner: universes[i].owner,
-                createdAt: universes[i].createdAt,
-                members: universes[i].members
+                createdAt: universes[i].createdAt
             });
         }
         res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -1198,14 +1247,13 @@ const httpServer = http.createServer(async (req, res) => {
             collection.updateOne({ token: user.token }, { $set: { lastCommunication: new Date(), lastIP: ip } })
             const universesCollection = db.collection("universes");
             const keyCollection = db.collection("universeKeys");
+            const membersCollection = db.collection("members");
             const universeId = "&"+ulid();
             universesCollection.insertOne({
                 id: universeId,
                 name: parsedBody.universeName,
                 owner: user.username,
-                createdAt: new Date(),
-                members: [user.username],
-                rooms: []
+                createdAt: new Date()
             })
             keyCollection.insertOne({
                 user: user.username,
@@ -1213,6 +1261,13 @@ const httpServer = http.createServer(async (req, res) => {
                 key: parsedBody.universeKey,
                 iv: parsedBody.iv,
                 createdAt: new Date()
+            })
+            membersCollection.insertOne({
+                user: user.username,
+                target: universeId,
+                nick: "",
+                role: "owner",
+                joinedAt: new Date()
             })
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(sendResponse(true, {
@@ -1288,24 +1343,33 @@ const httpServer = http.createServer(async (req, res) => {
                 return;
             }
             const universesCollection = db.collection("universes");
+            const membersCollection = db.collection("members");
             const universe = await universesCollection.findOne({ id: parsedBody.universeId });
             if (universe == null) {
                 res.writeHead(404, { 'Content-Type': 'application/json' });
                 res.end(sendResponse(false, null, "Universe not found"));
                 return;
             }
-            if (!universe.members.includes(user.username)) {
+            const member = await membersCollection.findOne({ user: user.username, target: universe.id });
+            if (member == null) {
                 res.writeHead(403, { 'Content-Type': 'application/json' });
                 res.end(sendResponse(false, null, "User is not member of this universe"));
-                return;
+                return;                    
             }
-            if (universe.members.includes(targetUser.username)) {
+            const targetMember = await membersCollection.findOne({ user: targetUser.username, target: universe.id });
+            if (targetMember != null) {
                 res.writeHead(400, { 'Content-Type': 'application/json' });
                 res.end(sendResponse(false, null, "User is already member of this universe"));
                 return;
             }
             const keyCollection = db.collection("universeKeys");
-            universesCollection.updateOne({ id: parsedBody.universeId }, { $addToSet: { members: targetUser.username } })
+            membersCollection.insertOne({
+                user: targetUser.username,
+                target: universe.id,
+                nick: "",
+                role: "member",
+                joinedAt: new Date()
+            })
             keyCollection.insertOne({
                 user: targetUser.username,
                 universeId: parsedBody.universeId,
@@ -1394,20 +1458,10 @@ const httpServer = http.createServer(async (req, res) => {
                     publicKey: parsedBody.publicKey
                 }
             })
-            const roomsCollection = db.collection("rooms");
             const keyCollection = db.collection("roomKeys");
-            const universesCollection = db.collection("universes");
+            const membersCollection = db.collection("members");
             const universeKeysCollection = db.collection("universeKeys");
-            const oldRooms = await roomsCollection.find({ members: { $all: [ user.username ] } }).toArray();
-            const oldUniverses = await universesCollection.find({ members: { $all: [ user.username ] } }).toArray();
-            for (let i = 0; i < oldRooms.length; i++) {
-                oldRooms[i].members.splice(oldRooms[i].members.indexOf(user.username), 1);
-                await roomsCollection.updateOne({ id: oldRooms[i].id }, { $set: { members: oldRooms[i].members } });
-            }
-            for (let i = 0; i < oldUniverses.length; i++) {
-                oldUniverses[i].members.splice(oldUniverses[i].members.indexOf(user.username), 1);
-                await universesCollection.updateOne({ id: oldUniverses[i].id }, { $set: { members: oldUniverses[i].members } });
-            }
+            await membersCollection.deleteMany({ user: user.username });
             await keyCollection.deleteMany({ user: user.username });
             await universeKeysCollection.deleteMany({ user: user.username });
             res.writeHead(200, { 'Content-Type': 'application/json' });
