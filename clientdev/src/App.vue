@@ -38,6 +38,11 @@
     let messagesLoading = ref(false);
     let roomsLoading = ref(false);
     let socket: WebSocket;
+    let ownUser = ref({
+        username: '',
+        icon: '../logo.svg',
+        bio: 'This is your bio.'
+    })
 
     let channelKey: CryptoKey
     let channelIv: ArrayBuffer
@@ -1006,8 +1011,41 @@
             toast.add({ severity: 'error', summary: 'Error', detail: 'WebSocket error occurred. Please refresh the page.', life: 5000 });
         };
     }
+    async function getOwnInfo() {
+        const token = localStorage.getItem('token');
+        if (!token) {
+            localStorage.setItem("state", "1")
+            window.location.href = "";
+            return;
+        }
+        
+        let req = await fetch("/api/me", {
+            method: "GET",
+            headers: {
+                'Authorization': token,
+                'protocol': PROT_NAME,
+                'protocol-version': PROT_VER
+            }
+        })
+        let res = await req.json();
+        if (!res.ok) {
+            if (res.error === "Invalid token") {
+                localStorage.setItem("state", "1")
+                window.location.href = "";
+                return
+            }
+            toast.add({ severity: 'error', summary: 'Error', detail: res.error || "An unknown error occurred.", life: 3000 });
+            return;
+        }
+        ownUser.value = {
+            username: res.body.username,
+            icon: res.body.icon || '../logo.svg',
+            bio: res.body.bio || 'This user has no bio.'
+        };
+    }
     getUniverses()
     connectWs()
+    getOwnInfo()
 </script>
 
 <template>
@@ -1068,7 +1106,7 @@
             <div class="content-body">
                 <div class="messages overflow-auto">
                     <ChatMessage v-for="_ in 10" v-if="messagesLoading" loading="true" />
-                    <ChatMessage v-for="msg of messages" :username="msg.username" :icon="msg.icon" :message="msg.message" :timestamp="msg.timestamp" :id="msg.id" @edit-message="beginEditMessage(msg.id)" @delete-message="deleteMessage(msg.id)" @user-info="selectMember(msg.username)" :hidden="messagesLoading" loading="false" />
+                    <ChatMessage v-for="msg of messages" :username="msg.username" :icon="msg.icon" :message="msg.message" :timestamp="msg.timestamp" :id="msg.id" @edit-message="beginEditMessage(msg.id)" @delete-message="deleteMessage(msg.id)" @user-info="selectMember(msg.username)" :hidden="messagesLoading" loading="false" :ownusername="ownUser.username" />
                 </div>
                 <div class="message-input">
                     <InputText type="text" placeholder="Send a message..." v-model="messageInput" class="w-full" @keypress.enter="sendMessage()" />
