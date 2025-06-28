@@ -10,7 +10,7 @@
     const PROT_NAME = 'Solarixum Protocol';
     const PROT_VER = '0.1.0';
     const toast = useToast()
-    let messages: Ref<{ username: string, message: string, icon: string, timestamp: number }[]> = ref([])
+    let messages: Ref<{ username: string, message: string, icon: string, timestamp: number, id: string }[]> = ref([])
     let rooms: Ref<{ id: string, label: string, icon: string, active: boolean }[]> = ref([])
     let universes: Ref<{ id: string, label: string, icon: string, active: boolean }[]> = ref([]);
     let selectedRoom = ref(0);
@@ -22,6 +22,9 @@
     let universeName = ref("");
     let inviteModal = ref(false);
     let inviteName = ref("");
+    let editMessageModal = ref(false);
+    let editedMessageId = ref("");
+    let editedMessageContent = ref("");
 
     function selectRoom(index: number) {
         selectedRoom.value = index;
@@ -170,14 +173,16 @@
                     message: new TextDecoder().decode(decryptedMessage),
                     username: message.user,
                     icon: '../logo.svg',
-                    timestamp: new Date(message.createdAt).getTime()
+                    timestamp: new Date(message.createdAt).getTime(),
+                    id: message.id
                 })
             } catch (e) {
                 messages.value.push({
                     message: "Failed to decrypt message",
                     username: message.user,
                     icon: '../logo.svg',
-                    timestamp: new Date(message.createdAt).getTime()
+                    timestamp: new Date(message.createdAt).getTime(),
+                    id: message.id
                 });
             }
         }
@@ -614,6 +619,156 @@
         inviteName.value = "";
         inviteModal.value = false;
     }
+    async function beginEditMessage(id: string) {
+        for (let i = 0; i < messages.value.length; i++) {
+            if (messages.value[i].id == id) {
+                editedMessageContent.value = messages.value[i].message;
+                editMessageModal.value = true
+                editedMessageId.value = id;
+                break;
+            }
+        }
+    }
+    async function editMessage() {
+        if (selectedRoom.value >= rooms.value.length) {
+            toast.add({ severity: 'error', summary: 'Error', detail: "No room selected.", life: 3000 });
+            return;
+        }
+        const roomId = rooms.value[selectedRoom.value].id;
+        const token = localStorage.getItem('token');
+        if (!token) {
+            localStorage.setItem("state", "1")
+            window.location.href = "";
+            return
+        }
+        const privateKey = await utils.decryptPrivateKey()
+        if (!privateKey) {
+            localStorage.setItem("state", "1")
+            window.location.href = "";
+            return;
+        }
+
+        let req1 = await fetch(`/api/room/getKey?roomId=${encodeURIComponent(roomId)}`, {
+            method: "GET",
+            headers: {
+                Authorization: token,
+                protocol: PROT_NAME,
+                "protocol-version": PROT_VER,
+            },
+        });
+        let res1 = await req1.json();
+        if (!res1.ok) {
+            if (res1.error === "Invalid token") {
+                localStorage.setItem("state", "1")
+                window.location.href = "";
+                return
+            }
+            toast.add({ severity: 'error', summary: 'Error', detail: res1.error || "An unknown error occurred.", life: 3000 });
+            return;
+        }
+        console.log(res1);
+
+        let encryptedMessage
+        try {
+            let decryptedKey = await crypto.subtle.decrypt(
+                {
+                    name: "RSA-OAEP",
+                },
+                privateKey,
+                utils.base64ToArray(res1.body.key)
+            );
+            let decryptedIv = await crypto.subtle.decrypt(
+                {
+                    name: "RSA-OAEP",
+                },
+                privateKey,
+                utils.base64ToArray(res1.body.iv)
+            );
+            const keyBuffer = await crypto.subtle.importKey("raw", decryptedKey, { name: "AES-CBC" }, false, [
+                "encrypt",
+                "decrypt",
+            ]);
+            encryptedMessage = await crypto.subtle.encrypt(
+                {
+                    name: "AES-CBC",
+                    iv: decryptedIv,
+                },
+                keyBuffer,
+                new TextEncoder().encode(editedMessageContent.value)
+            );
+        } catch (e) {
+            toast.add({ severity: 'error', summary: 'Error', detail: "Failed to encrypt the message.", life: 3000 });
+            return;
+        }
+
+        let req2 = await fetch("/api/room/editMessage", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+                token,
+                roomId,
+                message: utils.dataToBase64(encryptedMessage),
+                messageId: editedMessageId.value,
+                protocol: PROT_NAME,
+                protocolVersion: PROT_VER,
+            }),
+        });
+        let res2 = await req2.json();
+        if (!res2.ok) {
+            if (res2.error === "Invalid token") {
+                localStorage.setItem("state", "1")
+                window.location.href = "";
+                return
+            }
+            toast.add({ severity: 'error', summary: 'Error', detail: res2.error || "An unknown error occurred.", life: 3000 });
+            return;
+        }
+        console.log(res2);
+        editedMessageContent.value = ""
+        editMessageModal.value = false;
+        getMessages()
+    }
+    async function deleteMessage(id: string) {
+        if (selectedRoom.value >= rooms.value.length) {
+            toast.add({ severity: 'error', summary: 'Error', detail: "No room selected.", life: 3000 });
+            return;
+        }
+        const roomId = rooms.value[selectedRoom.value].id;
+        const token = localStorage.getItem('token');
+        if (!token) {
+            localStorage.setItem("state", "1")
+            window.location.href = "";
+            return
+        }
+
+        let req = await fetch("/api/room/deleteMessage", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+                token,
+                roomId,
+                messageId: id,
+                protocol: PROT_NAME,
+                protocolVersion: PROT_VER,
+            }),
+        });
+        let res = await req.json();
+        if (!res.ok) {
+            if (res.error === "Invalid token") {
+                localStorage.setItem("state", "1")
+                window.location.href = "";
+                return
+            }
+            toast.add({ severity: 'error', summary: 'Error', detail: res.error || "An unknown error occurred.", life: 3000 });
+            return;
+        }
+        console.log(res);
+        getMessages()
+    }
     getUniverses()
 </script>
 
@@ -628,14 +783,20 @@
         </Dialog>
         <Dialog v-model:visible="newUniverseModal" modal header="Create universe" style="width: fit-content;">
             <div class="flex flex-col gap-4">
-                <InputText type="text" placeholder="Universe name" style="width: 400px" @keypress.enter = "createRoom()" v-model="universeName" />
+                <InputText type="text" placeholder="Universe name" style="width: 400px" @keypress.enter = "createUniverse()" v-model="universeName" />
                 <Button style="width: fit-content;margin-left: auto;" @click="createUniverse()">Create</Button>
             </div>
         </Dialog>
         <Dialog v-model:visible="inviteModal" modal :header="`Invite to '${selectedRoom < rooms.length ? (selectedUniverse == -1 ? rooms[selectedRoom].label : universes[selectedUniverse].label) : 'Loading...'}'`" style="width: fit-content;">
             <div class="flex flex-col gap-4">
-                <InputText type="text" placeholder="Username" style="width: 400px" @keypress.enter = "createRoom()" v-model="inviteName" />
+                <InputText type="text" placeholder="Username" style="width: 400px" @keypress.enter = "inviteUser()" v-model="inviteName" />
                 <Button style="width: fit-content;margin-left: auto;" @click="inviteUser()">Invite</Button>
+            </div>
+        </Dialog>
+        <Dialog v-model:visible="editMessageModal" modal header="Edit message" style="width: fit-content;">
+            <div class="flex flex-col gap-4">
+                <InputText type="text" placeholder="Message" style="width: 400px" @keypress.enter = "editMessage()" v-model="editedMessageContent" />
+                <Button style="width: fit-content;margin-left: auto;" @click="editMessage()">Save</Button>
             </div>
         </Dialog>
         <div class="universe-select">
@@ -658,7 +819,7 @@
             </div>
             <div class="content-body">
                 <div class="messages">
-                    <ChatMessage v-for="msg of messages" :username="msg.username" :icon="msg.icon" :message="msg.message" :timestamp="msg.timestamp" />
+                    <ChatMessage v-for="msg of messages" :username="msg.username" :icon="msg.icon" :message="msg.message" :timestamp="msg.timestamp" :id="msg.id" @edit-message="beginEditMessage(msg.id)" @delete-message="deleteMessage(msg.id)" />
                 </div>
                 <div class="message-input">
                     <InputText type="text" placeholder="Send a message..." v-model="messageInput" class="w-full" @keypress.enter="sendMessage()" />
