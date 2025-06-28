@@ -783,7 +783,7 @@
         console.log(res2);
         editedMessageContent.value = ""
         editMessageModal.value = false;
-        getMessages()
+        //getMessages()
     }
     async function deleteMessage(id: string) {
         if (selectedRoom.value >= rooms.value.length) {
@@ -822,7 +822,7 @@
             return;
         }
         console.log(res);
-        getMessages()
+        //getMessages()
     }
     async function selectMember(name: string) {
         let req = await fetch(`/api/user/info?username=${encodeURIComponent(name)}`, {
@@ -957,6 +957,43 @@
                         icon: '../logo.svg',
                         active: false
                     })
+                }
+            } else if (data.type == "messageUpdate") {
+                let currentRoom = rooms.value[selectedRoom.value];
+                if (currentRoom && currentRoom.id == data.roomId) {
+                    try {
+                        const decryptedMessage = await crypto.subtle.decrypt(
+                            {
+                                name: "AES-CBC",
+                                iv: channelIv,
+                            },
+                            channelKey,
+                            utils.base64ToData(data.message)
+                        );
+                        for (let i = 0; i < messages.value.length; i++) {
+                            if (messages.value[i].id == data.id) {
+                                messages.value[i].message = new TextDecoder().decode(decryptedMessage);
+                                break;
+                            }
+                        }
+                    } catch (e) {
+                        for (let i = 0; i < messages.value.length; i++) {
+                            if (messages.value[i].id == data.id) {
+                                messages.value[i].message = "Failed to decrypt message";
+                                break;
+                            }
+                        }
+                    }
+                }
+            } else if (data.type == "messageDelete") {
+                let currentRoom = rooms.value[selectedRoom.value];
+                if (currentRoom && currentRoom.id == data.roomId) {
+                    for (let i = 0; i < messages.value.length; i++) {
+                        if (messages.value[i].id == data.id) {
+                            messages.value.splice(i, 1);
+                            break;
+                        }
+                    }
                 }
             }
         }

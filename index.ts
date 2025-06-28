@@ -685,7 +685,7 @@ const httpServer = http.createServer(async (req, res) => {
                 user: user.username,
                 message: parsedBody.message,
                 createdAt: new Date(),
-                edits: [],
+                edited: false,
                 protocol: PROT_NAME,
                 protocolVersion: PROT_VER
             }))
@@ -795,6 +795,15 @@ const httpServer = http.createServer(async (req, res) => {
                 return;
             }
             messagesCollection.updateOne({ id: message.id }, { $set: { message: parsedBody.message }, $addToSet: { edits: message.message } })
+            transmitRoomUpdate(parsedBody.roomId, JSON.stringify({
+                type: "messageUpdate",
+                roomId: parsedBody.roomId,
+                id: message.id,
+                message: parsedBody.message,
+                edited: true,
+                protocol: PROT_NAME,
+                protocolVersion: PROT_VER
+            }))
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(sendResponse(true, {
                 messageId: parsedBody.messageId,
@@ -896,6 +905,13 @@ const httpServer = http.createServer(async (req, res) => {
                 return;
             }
             messagesCollection.updateOne({ id: message.id }, { $set: { deleted: true } })
+            transmitRoomUpdate(parsedBody.roomId, JSON.stringify({
+                type: "messageDelete",
+                roomId: parsedBody.roomId,
+                id: message.id,
+                protocol: PROT_NAME,
+                protocolVersion: PROT_VER
+            }))
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(sendResponse(true, {
                 messageId: parsedBody.messageId,
@@ -973,7 +989,7 @@ const httpServer = http.createServer(async (req, res) => {
                 user: messages[i].user,
                 message: messages[i].message,
                 createdAt: messages[i].createdAt,
-                edits: messages[i].edits
+                edited: messages[i].edits.length > 0
             });
         }
         res.writeHead(200, { 'Content-Type': 'application/json' });
