@@ -8,6 +8,7 @@
     import plussvg from './assets/plus.svg';
     import UserCard from './components/UserCard.vue';
     import UserInformation from './components/UserInformation.vue';
+    import Settings from './components/Settings.vue';
 
     const PROT_NAME = 'Solarixum Protocol';
     const PROT_VER = '0.1.0';
@@ -43,6 +44,7 @@
         icon: '../logo.svg',
         bio: 'This is your bio.'
     })
+    let settingsOpen = ref(false);
 
     let channelKey: CryptoKey
     let channelIv: ArrayBuffer
@@ -1083,11 +1085,17 @@
         <Dialog v-model:visible="userModal" modal :header="`Profile of '${userInfo.username.substring(1)}'`" style="width: fit-content;">
             <UserInformation :label="userInfo.username" :icon="userInfo.icon" :bio="userInfo.bio" />
         </Dialog>
+        <Dialog v-model:visible="settingsOpen" modal header="Settings" style="width: fit-content;">
+            <Settings :username="ownUser.username" :icon="ownUser.icon" :bio="ownUser.bio" />
+        </Dialog>
         <div class="universe-select overflow-auto">
             <UniverseButton label="Home" icon="../logo.svg" :active="selectedUniverse == -1" @click="selectUniverse(-1)" />
             <Divider />
             <UniverseButton v-for="(universe, i) in universes" :label="universe.label" :icon="universe.icon" :active="universe.active" @click="selectUniverse(i)" />
             <UniverseButton label="Create Universe" :icon="plussvg" active="false" @click="newUniverseModal = true" />
+        </div>
+        <div class="ownuser">
+            <UniverseButton :label="`${ownUser.username}(You)`" :icon="ownUser.icon" :active="false" @click="settingsOpen = true" />
         </div>
         <div class="content">
             <div class="content-head">
@@ -1174,10 +1182,20 @@
     top: 0;
     left: 0;
     width: 75px;
-    height: 100%;
+    height: calc(100% - 104px);
     z-index: 2;
     margin-left: 5px;
-    padding-block: 10px;
+    margin-block: 10px;
+}
+.ownuser {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    width: 75px;
+    height: fit-content;
+    z-index: 2;
+    margin-left: 5px;
+    margin-block: 10px;
 }
 .messages {
     width: 100%;
