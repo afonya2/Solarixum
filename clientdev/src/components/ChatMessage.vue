@@ -1,7 +1,7 @@
 <script setup lang="ts">
     import { Button } from 'primevue';
     let props = defineProps(["username", "icon", "message", "timestamp"]);
-    let emits = defineEmits(["editMessage", "deleteMessage"]);
+    let emits = defineEmits(["editMessage", "deleteMessage", "userInfo"]);
 
     async function editMessage() {
         emits("editMessage");
@@ -16,7 +16,7 @@
         <img :src="props.icon" :alt="props.username" :title="props.username" class="icon" draggable="false" />
         <div class="message-content">
             <div class="username-part">
-                <p class="username">{{ props.username }}</p>
+                <p class="username" @click="emits('userInfo')">{{ props.username }}</p>
                 <p class="timestamp">{{ new Date(Number(props.timestamp)).toLocaleString() }}</p>
             </div>
             <p class="message">{{ props.message }}</p>

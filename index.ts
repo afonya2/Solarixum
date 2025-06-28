@@ -1550,6 +1550,46 @@ const httpServer = http.createServer(async (req, res) => {
                 token: token
             }));
         })
+    } else if (clearUrl == "/api/user/info" && req.method == 'GET') {
+        if (req.headers["protocol"] != PROT_NAME) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(sendResponse(false, null, "Unknown protocol"));
+            return;
+        }
+        if (req.headers["protocol-version"] != PROT_VER) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(sendResponse(false, null, "Unsupported protocol version"));
+            return;
+        }
+        if (args.username == undefined || typeof args.username != "string" || !args.username.startsWith("@")) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(sendResponse(false, null, "Invalid username"));
+            return;
+        }
+        const collection = db.collection("users");
+        const user = await collection.findOne({ token: req.headers["authorization"] });
+        if (user == null) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(sendResponse(false, null, "Invalid token"));
+            return;
+        }
+        if (user.suspended) {
+            res.writeHead(403, { 'Content-Type': 'application/json' });
+            res.end(sendResponse(false, null, "User is suspended"));
+            return;
+        }
+        collection.updateOne({ token: user.token }, { $set: { lastCommunication: new Date(), lastIP: ip } })
+        const targetUser = await collection.findOne({ username: decodeURIComponent(args.username) });
+        if (targetUser == null) {
+            res.writeHead(404, { 'Content-Type': 'application/json' });
+            res.end(sendResponse(false, null, "User not found"));
+            return;
+        }
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(sendResponse(true, {
+            username: targetUser.username,
+            createdAt: targetUser.createdAt
+        }));
     } else {
         res.writeHead(404, { 'Content-Type': 'application/json' });
         res.end(sendResponse(false, null, "Not Found"));

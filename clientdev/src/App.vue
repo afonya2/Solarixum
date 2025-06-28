@@ -7,6 +7,7 @@
     import utils from './utils';
     import plussvg from './assets/plus.svg';
 import UserCard from './components/UserCard.vue';
+import UserInformation from './components/UserInformation.vue';
 
     const PROT_NAME = 'Solarixum Protocol';
     const PROT_VER = '0.1.0';
@@ -28,6 +29,12 @@ import UserCard from './components/UserCard.vue';
     let editedMessageId = ref("");
     let editedMessageContent = ref("");
     let showMembers = ref(false);
+    let userModal = ref(false);
+    let userInfo = ref({
+        username: '',
+        icon: '../logo.svg',
+        bio: 'This is a user bio.'
+    });
 
     async function selectRoom(index: number) {
         const token = localStorage.getItem('token');
@@ -805,6 +812,33 @@ import UserCard from './components/UserCard.vue';
         console.log(res);
         getMessages()
     }
+    async function selectMember(name: string) {
+        let req = await fetch(`/api/user/info?username=${encodeURIComponent(name)}`, {
+            method: "GET",
+            headers: {
+                'Authorization': localStorage.getItem('token') || '',
+                'protocol': PROT_NAME,
+                'protocol-version': PROT_VER
+            }
+        })
+        let res = await req.json();
+        if (!res.ok) {
+            if (res.error === "Invalid token") {
+                localStorage.setItem("state", "1")
+                window.location.href = "";
+                return
+            }
+            toast.add({ severity: 'error', summary: 'Error', detail: res.error || "An unknown error occurred.", life: 3000 });
+            return;
+        }
+        userInfo.value = {
+            username: res.body.username,
+            icon: res.body.icon || '../logo.svg',
+            bio: res.body.bio || 'This user has no bio.'
+        };
+        showMembers.value = false;
+        userModal.value = true;
+    }
     getUniverses()
 </script>
 
@@ -837,8 +871,11 @@ import UserCard from './components/UserCard.vue';
         </Dialog>
         <Dialog v-model:visible="showMembers" modal :header="`Members of '${selectedRoom < rooms.length ? (selectedUniverse == -1 ? rooms[selectedRoom].label : universes[selectedUniverse].label) : 'Loading...'}'`" style="width: 25%;min-width: fit-content;max-height: 25%;overflow: auto;">
             <div class="flex flex-col gap-4">
-                <UserCard v-for="member in roomMembers" :label="member.username" :icon="member.icon" :rank="member.rank" />
+                <UserCard v-for="member in roomMembers" :label="member.username" :icon="member.icon" :rank="member.rank" @click="selectMember(member.username)" />
             </div>
+        </Dialog>
+        <Dialog v-model:visible="userModal" modal :header="`Profile of '${userInfo.username.substring(1)}'`" style="width: fit-content;">
+            <UserInformation :label="userInfo.username" :icon="userInfo.icon" :bio="userInfo.bio" />
         </Dialog>
         <div class="universe-select">
             <UniverseButton label="Home" icon="../logo.svg" :active="selectedUniverse == -1" @click="selectUniverse(-1)" />
@@ -861,7 +898,7 @@ import UserCard from './components/UserCard.vue';
             </div>
             <div class="content-body">
                 <div class="messages">
-                    <ChatMessage v-for="msg of messages" :username="msg.username" :icon="msg.icon" :message="msg.message" :timestamp="msg.timestamp" :id="msg.id" @edit-message="beginEditMessage(msg.id)" @delete-message="deleteMessage(msg.id)" />
+                    <ChatMessage v-for="msg of messages" :username="msg.username" :icon="msg.icon" :message="msg.message" :timestamp="msg.timestamp" :id="msg.id" @edit-message="beginEditMessage(msg.id)" @delete-message="deleteMessage(msg.id)" @user-info="selectMember(msg.username)" />
                 </div>
                 <div class="message-input">
                     <InputText type="text" placeholder="Send a message..." v-model="messageInput" class="w-full" @keypress.enter="sendMessage()" />
