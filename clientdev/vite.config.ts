@@ -15,6 +15,10 @@ export default defineConfig({
         target: 'ws://localhost:1010',
         ws: true,
         changeOrigin: true
+      },
+      '/uploads': {
+        target: 'http://localhost:1010',
+        changeOrigin: true
       }
     }
   }

@@ -3,7 +3,7 @@
     import ChatMessage from './components/ChatMessage.vue';
     import RoomButton from './components/RoomButton.vue';
     import UniverseButton from './components/UniverseButton.vue';
-    import { Divider, Toast, useToast, InputText, Dialog, Button } from 'primevue';
+    import { Divider, Toast, useToast, InputText, Dialog, Button, type ToastMessageOptions } from 'primevue';
     import utils from './utils';
     import plussvg from './assets/plus.svg';
     import UserCard from './components/UserCard.vue';
@@ -81,11 +81,33 @@
             return;
         }
         console.log(res);
-        roomMembers.value = res.body.members.map((member: any) => ({
-            username: member.user,
-            icon: member.icon || '../logo.svg',
-            rank: member.role || 'member'
-        }));
+        let tempMembers: { username: string, icon: string, rank: string }[] = [];
+        for (let i = 0; i < res.body.members.length; i++) {
+            let req2 = await fetch(`/api/user/info?username=${encodeURIComponent(res.body.members[i].user)}`, {
+                method: "GET",
+                headers: {
+                    'Authorization': localStorage.getItem('token') || '',
+                    'protocol': PROT_NAME,
+                    'protocol-version': PROT_VER
+                }
+            })
+            let res2 = await req2.json();
+            if (!res2.ok) {
+                if (res2.error === "Invalid token") {
+                    localStorage.setItem("state", "1")
+                    window.location.href = "";
+                    return
+                }
+                toast.add({ severity: 'error', summary: 'Error', detail: res2.error || "An unknown error occurred.", life: 3000 });
+                return;
+            }
+            tempMembers.push({
+                username: res2.body.username,
+                icon: res2.body.icon != null ? '/uploads/'+encodeURIComponent(res2.body.icon)+'.png' : '../logo.svg',
+                rank: res.body.members[i].role || 'member'
+            });
+        }
+        roomMembers.value = tempMembers
 
         getMessages()
     }
@@ -220,6 +242,24 @@
         let preMessages: { username: string, message: string, icon: string, timestamp: number, id: string }[] = [];
         for (let i = 0; i < res2.body.messages.length; i++) {
             const message = res2.body.messages[i];
+            let userReq = await fetch(`/api/user/info?username=${encodeURIComponent(message.user)}`, {
+                method: "GET",
+                headers: {
+                    'Authorization': localStorage.getItem('token') || '',
+                    'protocol': PROT_NAME,
+                    'protocol-version': PROT_VER
+                }
+            })
+            let userRes = await userReq.json();
+            if (!userRes.ok) {
+                if (userRes.error === "Invalid token") {
+                    localStorage.setItem("state", "1")
+                    window.location.href = "";
+                    return
+                }
+                toast.add({ severity: 'error', summary: 'Error', detail: userRes.error || "An unknown error occurred.", life: 3000 });
+                return;
+            }
             try {
                 const decryptedMessage = await crypto.subtle.decrypt(
                     {
@@ -232,7 +272,7 @@
                 preMessages.push({
                     message: new TextDecoder().decode(decryptedMessage),
                     username: message.user,
-                    icon: '../logo.svg',
+                    icon: userRes.body.icon != null ? '/uploads/'+encodeURIComponent(userRes.body.icon)+'.png' : '../logo.svg',
                     timestamp: new Date(message.createdAt).getTime(),
                     id: message.id
                 })
@@ -240,7 +280,7 @@
                 preMessages.push({
                     message: "Failed to decrypt message",
                     username: message.user,
-                    icon: '../logo.svg',
+                    icon: userRes.body.icon != null ? '/uploads/'+encodeURIComponent(userRes.body.icon)+'.png' : '../logo.svg',
                     timestamp: new Date(message.createdAt).getTime(),
                     id: message.id
                 });
@@ -852,7 +892,7 @@
         }
         userInfo.value = {
             username: res.body.username,
-            icon: res.body.icon || '../logo.svg',
+            icon: res.body.icon != null ? '/uploads/'+encodeURIComponent(res.body.icon)+'.png' : '../logo.svg',
             bio: res.body.bio || 'This user has no bio.'
         };
         showMembers.value = false;
@@ -1041,9 +1081,12 @@
         }
         ownUser.value = {
             username: res.body.username,
-            icon: res.body.icon || '../logo.svg',
-            bio: res.body.bio || 'This user has no bio.'
+            icon: res.body.icon != null ? '/uploads/'+encodeURIComponent(res.body.icon)+'.png' : '../logo.svg',
+            bio: res.body.bio || ''
         };
+    }
+    function notify(message: ToastMessageOptions) {
+        toast.add(message)
     }
     getUniverses()
     connectWs()
@@ -1086,7 +1129,7 @@
             <UserInformation :label="userInfo.username" :icon="userInfo.icon" :bio="userInfo.bio" />
         </Dialog>
         <Dialog v-model:visible="settingsOpen" modal header="Settings" style="width: fit-content;">
-            <Settings :username="ownUser.username" :icon="ownUser.icon" :bio="ownUser.bio" />
+            <Settings :username="ownUser.username" :icon="ownUser.icon" :bio="ownUser.bio" @notify="notify" />
         </Dialog>
         <div class="universe-select overflow-auto">
             <UniverseButton label="Home" icon="../logo.svg" :active="selectedUniverse == -1" @click="selectUniverse(-1)" />

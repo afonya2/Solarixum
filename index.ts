@@ -7,6 +7,7 @@ import path from 'path';
 import { MongoClient } from 'mongodb'
 import { ulid } from 'ulid';
 import WebSocket from 'ws';
+import busboy from 'busboy'
 
 const VER = '0.1.0';
 const SERV_NAME = 'Solarixum Server';
@@ -179,6 +180,40 @@ const httpServer = http.createServer(async (req, res) => {
             res.writeHead(200, { 'Content-Type': 'text/text', 'cache-control': 'max-age=86400' });
             res.end(content);
         }
+    } else if (clearUrl?.startsWith("/uploads/")) {
+        let pathRemaining = decodeURIComponent(clearUrl.replace("/uploads/", ""))
+        if (!pathRemaining.startsWith("~")) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(sendResponse(false, null, "Invalid file"));
+            return;
+        }
+        pathRemaining = pathRemaining.substring(1)
+        let file = `./uploads/${path.normalize(pathRemaining)}`;
+        if (!fs.existsSync(file)) {
+            res.writeHead(404, { 'Content-Type': 'application/json' });
+            res.end(sendResponse(false, null, "Not Found"));
+            return;
+        }
+        let content = fs.readFileSync(file);
+        if (file.endsWith(".html")) {
+            res.writeHead(200, { 'Content-Type': 'text/html', 'cache-control': 'max-age=86400' });
+            res.end(content);
+        } else if (file.endsWith(".js")) {
+            res.writeHead(200, { 'Content-Type': 'application/javascript', 'cache-control': 'max-age=86400' });
+            res.end(content);
+        } else if (file.endsWith(".css")) {
+            res.writeHead(200, { 'Content-Type': 'text/css', 'cache-control': 'max-age=86400' });
+            res.end(content);
+        } else if (file.endsWith(".jpg")) {
+            res.writeHead(200, { 'Content-Type': 'image/jpeg', 'cache-control': 'max-age=86400' });
+            res.end(content);
+        } else if (file.endsWith(".svg")) {
+            res.writeHead(200, { 'Content-Type': 'image/svg+xml', 'cache-control': 'max-age=86400' });
+            res.end(content);
+        } else {
+            res.writeHead(200, { 'Content-Type': 'text/text', 'cache-control': 'max-age=86400' });
+            res.end(content);
+        }
     } else if (clearUrl == "/api/register" && req.method === 'POST') {
         let body = '';
         req.on('data', async (data) => {
@@ -250,6 +285,8 @@ const httpServer = http.createServer(async (req, res) => {
                 password: crypto.createHash('sha256').update(parsedBody.password).digest('hex'),
                 privateKey: parsedBody.privateKey,
                 publicKey: parsedBody.publicKey,
+                bio: "",
+                icon: "",
                 createdAt: new Date(),
                 lastLogin: new Date(),
                 lastCommunication: new Date(),
@@ -1170,7 +1207,7 @@ const httpServer = http.createServer(async (req, res) => {
             return;
         }
         const collection = db.collection("users");
-        const user = await collection.findOne({ token: req.headers["authorization"] });
+        let user = await collection.findOne({ token: req.headers["authorization"] });
         if (user == null) {
             res.writeHead(400, { 'Content-Type': 'application/json' });
             res.end(sendResponse(false, null, "Invalid token"));
@@ -1183,9 +1220,17 @@ const httpServer = http.createServer(async (req, res) => {
         }
         collection.updateOne({ token: user.token }, { $set: { lastCommunication: new Date(), lastIP: ip } })
         res.writeHead(200, { 'Content-Type': 'application/json' });
+        if (user.icon == undefined || user.icon.length == 0) {
+            user.icon = null
+        }
+        if (user.bio == undefined || user.bio.length == 0) {
+            user.bio = null
+        }
         res.end(sendResponse(true, {
             username: user.username,
-            createdAt: user.createdAt
+            createdAt: user.createdAt,
+            bio: user.bio,
+            icon: user.icon
         }));
     } else if (clearUrl == "/api/rooms" && req.method == 'GET') {
         if (req.headers["protocol"] != PROT_NAME) {
@@ -1624,6 +1669,7 @@ const httpServer = http.createServer(async (req, res) => {
                 res.end(sendResponse(false, null, "User is suspended"));
                 return;
             }
+            collection.updateOne({ token: user.token }, { $set: { lastCommunication: new Date(), lastIP: ip } })
             let token: string;
             let check = 0
             while (true) {
@@ -1689,17 +1735,137 @@ const httpServer = http.createServer(async (req, res) => {
             return;
         }
         collection.updateOne({ token: user.token }, { $set: { lastCommunication: new Date(), lastIP: ip } })
-        const targetUser = await collection.findOne({ username: decodeURIComponent(args.username) });
+        let targetUser = await collection.findOne({ username: decodeURIComponent(args.username) });
         if (targetUser == null) {
             res.writeHead(404, { 'Content-Type': 'application/json' });
             res.end(sendResponse(false, null, "User not found"));
             return;
         }
         res.writeHead(200, { 'Content-Type': 'application/json' });
+        if (targetUser.icon == undefined || targetUser.icon.length == 0) {
+            targetUser.icon = null
+        }
+        if (targetUser.bio == undefined || targetUser.bio.length == 0) {
+            targetUser.bio = null
+        }
         res.end(sendResponse(true, {
             username: targetUser.username,
-            createdAt: targetUser.createdAt
+            createdAt: targetUser.createdAt,
+            bio: targetUser.bio,
+            icon: targetUser.icon,
         }));
+    } else if (clearUrl == "/api/user/update" && req.method == 'POST') {
+        let body = '';
+        req.on('data', async (data) => {
+            body += data.toString();
+        })
+        req.on('end', async () => {
+            let parsedBody: any;
+            try {
+                parsedBody = JSON.parse(body);
+            } catch (e) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid JSON"));
+                return;
+            }
+            if (parsedBody.protocol != PROT_NAME) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Unknown protocol"));
+                return;
+            }
+            if (parsedBody.protocolVersion != PROT_VER) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Unsupported protocol version"));
+                return;
+            }
+            if (parsedBody.token == undefined || typeof parsedBody.token != "string") {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid token"));
+                return;
+            }
+            if (parsedBody.bio == undefined || typeof parsedBody.bio != "string" || parsedBody.bio.length > 256) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid bio"));
+                return;
+            }
+            const collection = db.collection("users");
+            const user = await collection.findOne({ token: parsedBody.token });
+            if (user == null) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid token"));
+                return;
+            }
+            if (user.suspended) {
+                res.writeHead(403, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "User is suspended"));
+                return;
+            }
+            if (parsedBody.icon == undefined || typeof parsedBody.icon != "string" || !parsedBody.icon.startsWith("~")) {
+                collection.updateOne({ token: user.token }, { $set: { lastCommunication: new Date(), lastIP: ip, bio: parsedBody.bio } })   
+            } else {
+                collection.updateOne({ token: user.token }, { $set: { lastCommunication: new Date(), lastIP: ip, bio: parsedBody.bio, icon: parsedBody.icon } })
+            }
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(sendResponse(true, {
+                username: user.username,
+                createdAt: user.createdAt,
+                bio: parsedBody.bio,
+                icon: parsedBody.icon
+            }));
+        })
+    } else if (clearUrl == "/api/upload" && req.method == 'POST') {
+        const collection = db.collection("users");
+        const user = await collection.findOne({ token: req.headers["authorization"] });
+        if (user == null) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(sendResponse(false, null, "Invalid token"));
+            return;
+        }
+        if (user.suspended) {
+            res.writeHead(403, { 'Content-Type': 'application/json' });
+            res.end(sendResponse(false, null, "User is suspended"));
+            return;
+        }
+        try {
+            let bb = busboy({ headers: req.headers, limits: { fileSize: 10 * 1024 * 1024, files: 1 } });
+            let fId = "~"+ulid();
+
+            bb.on('file', (_, file, info) => {
+                let { filename } = info;
+                let savePath = path.join(__dirname, 'uploads', fId.substring(1) + path.extname(filename));
+                const saveTo = fs.createWriteStream(savePath);
+                file.pipe(saveTo);
+            });
+
+            bb.on('error', (_) => {
+                res.writeHead(500, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Failed to upload file"));
+            });
+            bb.on('filesLimit', () => {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Too many files uploaded"));
+            });
+            bb.on('fieldsLimit', () => {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Too many fields"));
+            })
+            bb.on('partsLimit', () => {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Max filesize is: 10MB"));
+            });
+
+            bb.on('finish', () => {
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(true, {
+                    fileId: fId,
+                }));
+            });
+
+            req.pipe(bb);
+        } catch (e) {
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(sendResponse(false, null, "Failed to upload file"));
+        }
     } else {
         res.writeHead(404, { 'Content-Type': 'application/json' });
         res.end(sendResponse(false, null, "Not Found"));
@@ -1763,7 +1929,7 @@ wsServer.on('connection', (socket) => {
             if (user == null) {
                 socket.send(JSON.stringify({
                     type: "error",
-                    error: "User not found",
+                    error: "Invalid token",
                     protocol: PROT_NAME,
                     protocolVersion: PROT_VER
                 }));
