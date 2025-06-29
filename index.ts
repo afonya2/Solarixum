@@ -52,7 +52,7 @@ async function transmitRoomUpdate(id: string, data: string) {
     const membersCollection = db.collection("members");
     const roomCollection = db.collection("rooms");
     const room = await roomCollection.findOne({ id: id });
-    if (room == null) {
+    if (room == null || room.deleted) {
         return;
     }
     let members
@@ -72,7 +72,7 @@ async function transmitUniverseUpdate(id: string, data: string) {
     const membersCollection = db.collection("members");
     const universeCollection = db.collection("universes");
     const universe = await universeCollection.findOne({ id: id });
-    if (universe == null) {
+    if (universe == null || universe.deleted) {
         return;
     }
     const members = await membersCollection.find({ target: id }).toArray();
@@ -501,7 +501,7 @@ const httpServer = http.createServer(async (req, res) => {
                     return;
                 }
                 const universe = await universesCollection.findOne({ id: decodeURIComponent(args.universeId) });
-                if (universe == null) {
+                if (universe == null || universe.deleted) {
                     res.writeHead(404, { 'Content-Type': 'application/json' });
                     res.end(sendResponse(false, null, "Universe not found"));
                     return;
@@ -511,6 +511,11 @@ const httpServer = http.createServer(async (req, res) => {
                     res.writeHead(403, { 'Content-Type': 'application/json' });
                     res.end(sendResponse(false, null, "User is not member of this universe"));
                     return;                    
+                }
+                if (member.role != "owner" && member.role != "admin") {
+                    res.writeHead(403, { 'Content-Type': 'application/json' });
+                    res.end(sendResponse(false, null, "Permission denied"));
+                    return;
                 }
                 roomsCollection.insertOne({
                     id: roomId,
@@ -600,7 +605,7 @@ const httpServer = http.createServer(async (req, res) => {
         const roomsCollection = db.collection("rooms");
         const membersCollection = db.collection("members");
         const room = await roomsCollection.findOne({ id: decodeURIComponent(args.roomId) });
-        if (room == null) {
+        if (room == null || room.deleted) {
             res.writeHead(404, { 'Content-Type': 'application/json' });
             res.end(sendResponse(false, null, "Room not found"));
             return;
@@ -609,7 +614,7 @@ const httpServer = http.createServer(async (req, res) => {
         if (room.universeId != "&0") {
             const universesCollection = db.collection("universes");
             const universe = await universesCollection.findOne({ id: room.universeId });
-            if (universe == null) {
+            if (universe == null || universe.deleted) {
                 res.writeHead(404, { 'Content-Type': 'application/json' });
                 res.end(sendResponse(false, null, "Universe not found"));
                 return;
@@ -703,7 +708,7 @@ const httpServer = http.createServer(async (req, res) => {
             const roomsCollection = db.collection("rooms");
             const membersCollection = db.collection("members");
             const room = await roomsCollection.findOne({ id: parsedBody.roomId });
-            if (room == null) {
+            if (room == null || room.deleted) {
                 res.writeHead(404, { 'Content-Type': 'application/json' });
                 res.end(sendResponse(false, null, "Room not found"));
                 return;
@@ -711,7 +716,7 @@ const httpServer = http.createServer(async (req, res) => {
             if (room.universeId != "&0") {
                 const universesCollection = db.collection("universes");
                 const universe = await universesCollection.findOne({ id: room.universeId });
-                if (universe == null) {
+                if (universe == null || universe.deleted) {
                     res.writeHead(404, { 'Content-Type': 'application/json' });
                     res.end(sendResponse(false, null, "Universe not found"));
                     return;
@@ -818,15 +823,22 @@ const httpServer = http.createServer(async (req, res) => {
             const roomsCollection = db.collection("rooms");
             const membersCollection = db.collection("members");
             const room = await roomsCollection.findOne({ id: parsedBody.roomId });
-            if (room == null) {
+            if (room == null || room.deleted) {
                 res.writeHead(404, { 'Content-Type': 'application/json' });
                 res.end(sendResponse(false, null, "Room not found"));
+                return;
+            }
+            const messagesCollection = db.collection("messages");
+            const message = await messagesCollection.findOne({ id: parsedBody.messageId, roomId: parsedBody.roomId });
+            if (message == null) {
+                res.writeHead(404, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Message not found"));
                 return;
             }
             if (room.universeId != "&0") {
                 const universesCollection = db.collection("universes");
                 const universe = await universesCollection.findOne({ id: room.universeId });
-                if (universe == null) {
+                if (universe == null || universe.deleted) {
                     res.writeHead(404, { 'Content-Type': 'application/json' });
                     res.end(sendResponse(false, null, "Universe not found"));
                     return;
@@ -837,6 +849,11 @@ const httpServer = http.createServer(async (req, res) => {
                     res.end(sendResponse(false, null, "User is not member of this universe"));
                     return;                    
                 }
+                if (member.role != "owner" && member.role != "admin" && member.role != "moderator" && message.user != user.username) {
+                    res.writeHead(403, { 'Content-Type': 'application/json' });
+                    res.end(sendResponse(false, null, "Permission denied"));
+                    return;
+                }
             } else {
                 const member = await membersCollection.findOne({ user: user.username, target: room.id });
                 if (member == null) {
@@ -844,18 +861,11 @@ const httpServer = http.createServer(async (req, res) => {
                     res.end(sendResponse(false, null, "User is not member of this room"));
                     return;                    
                 }
-            }
-            const messagesCollection = db.collection("messages");
-            const message = await messagesCollection.findOne({ id: parsedBody.messageId, roomId: parsedBody.roomId });
-            if (message == null) {
-                res.writeHead(404, { 'Content-Type': 'application/json' });
-                res.end(sendResponse(false, null, "Message not found"));
-                return;
-            }
-            if (message.user != user.username) {
-                res.writeHead(403, { 'Content-Type': 'application/json' });
-                res.end(sendResponse(false, null, "User is not owner of this message"));
-                return;
+                if (member.role != "owner" && member.role != "admin" && member.role != "moderator" && message.user != user.username) {
+                    res.writeHead(403, { 'Content-Type': 'application/json' });
+                    res.end(sendResponse(false, null, "Permission denied"));
+                    return;
+                }
             }
             messagesCollection.updateOne({ id: message.id }, { $set: { message: parsedBody.message }, $addToSet: { edits: message.message } })
             transmitRoomUpdate(parsedBody.roomId, JSON.stringify({
@@ -928,15 +938,22 @@ const httpServer = http.createServer(async (req, res) => {
             const roomsCollection = db.collection("rooms");
             const membersCollection = db.collection("members");
             const room = await roomsCollection.findOne({ id: parsedBody.roomId });
-            if (room == null) {
+            if (room == null || room.deleted) {
                 res.writeHead(404, { 'Content-Type': 'application/json' });
                 res.end(sendResponse(false, null, "Room not found"));
+                return;
+            }
+            const messagesCollection = db.collection("messages");
+            const message = await messagesCollection.findOne({ id: parsedBody.messageId, roomId: parsedBody.roomId });
+            if (message == null) {
+                res.writeHead(404, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Message not found"));
                 return;
             }
             if (room.universeId != "&0") {
                 const universesCollection = db.collection("universes");
                 const universe = await universesCollection.findOne({ id: room.universeId });
-                if (universe == null) {
+                if (universe == null || universe.deleted) {
                     res.writeHead(404, { 'Content-Type': 'application/json' });
                     res.end(sendResponse(false, null, "Universe not found"));
                     return;
@@ -947,6 +964,11 @@ const httpServer = http.createServer(async (req, res) => {
                     res.end(sendResponse(false, null, "User is not member of this universe"));
                     return;                    
                 }
+                if (member.role != "owner" && member.role != "admin" && member.role != "moderator" && message.user != user.username) {
+                    res.writeHead(403, { 'Content-Type': 'application/json' });
+                    res.end(sendResponse(false, null, "Permission denied"));
+                    return;
+                }
             } else {
                 const member = await membersCollection.findOne({ user: user.username, target: room.id });
                 if (member == null) {
@@ -954,18 +976,11 @@ const httpServer = http.createServer(async (req, res) => {
                     res.end(sendResponse(false, null, "User is not member of this room"));
                     return;                    
                 }
-            }
-            const messagesCollection = db.collection("messages");
-            const message = await messagesCollection.findOne({ id: parsedBody.messageId, roomId: parsedBody.roomId });
-            if (message == null) {
-                res.writeHead(404, { 'Content-Type': 'application/json' });
-                res.end(sendResponse(false, null, "Message not found"));
-                return;
-            }
-            if (message.user != user.username) {
-                res.writeHead(403, { 'Content-Type': 'application/json' });
-                res.end(sendResponse(false, null, "User is not owner of this message"));
-                return;
+                if (member.role != "owner" && member.role != "admin" && member.role != "moderator" && message.user != user.username) {
+                    res.writeHead(403, { 'Content-Type': 'application/json' });
+                    res.end(sendResponse(false, null, "Permission denied"));
+                    return;
+                }
             }
             messagesCollection.updateOne({ id: message.id }, { $set: { deleted: true } })
             transmitRoomUpdate(parsedBody.roomId, JSON.stringify({
@@ -1013,7 +1028,7 @@ const httpServer = http.createServer(async (req, res) => {
         const roomsCollection = db.collection("rooms");
         const membersCollection = db.collection("members");
         const room = await roomsCollection.findOne({ id: decodeURIComponent(args.roomId) });
-        if (room == null) {
+        if (room == null || room.deleted) {
             res.writeHead(404, { 'Content-Type': 'application/json' });
             res.end(sendResponse(false, null, "Room not found"));
             return;
@@ -1021,7 +1036,7 @@ const httpServer = http.createServer(async (req, res) => {
         if (room.universeId != "&0") {
             const universesCollection = db.collection("universes");
             const universe = await universesCollection.findOne({ id: room.universeId });
-            if (universe == null) {
+            if (universe == null || universe.deleted) {
                 res.writeHead(404, { 'Content-Type': 'application/json' });
                 res.end(sendResponse(false, null, "Universe not found"));
                 return;
@@ -1171,7 +1186,7 @@ const httpServer = http.createServer(async (req, res) => {
             const roomsCollection = db.collection("rooms");
             const membersCollection = db.collection("members");
             let room = await roomsCollection.findOne({ id: parsedBody.roomId });
-            if (room == null) {
+            if (room == null || room.deleted) {
                 res.writeHead(404, { 'Content-Type': 'application/json' });
                 res.end(sendResponse(false, null, "Room not found"));
                 return;
@@ -1358,7 +1373,7 @@ const httpServer = http.createServer(async (req, res) => {
         const roomsCollection = db.collection("rooms");
         const membersCollection = db.collection("members");
         let room = await roomsCollection.findOne({ id: decodeURIComponent(args.roomId) });
-        if (room == null) {
+        if (room == null || room.deleted) {
             res.writeHead(404, { 'Content-Type': 'application/json' });
             res.end(sendResponse(false, null, "Room not found"));
             return;
@@ -1367,7 +1382,7 @@ const httpServer = http.createServer(async (req, res) => {
         if (room.universeId != "&0") {
             const universesCollection = db.collection("universes");
             const universe = await universesCollection.findOne({ id: room.universeId });
-            if (universe == null) {
+            if (universe == null || universe.deleted) {
                 res.writeHead(404, { 'Content-Type': 'application/json' });
                 res.end(sendResponse(false, null, "Universe not found"));
                 return;
@@ -1622,8 +1637,8 @@ const httpServer = http.createServer(async (req, res) => {
             }
             const universesCollection = db.collection("universes");
             const membersCollection = db.collection("members");
-            const universe = await universesCollection.findOne({ id: parsedBody.universeId });
-            if (universe == null) {
+            let universe = await universesCollection.findOne({ id: parsedBody.universeId });
+            if (universe == null || universe.deleted) {
                 res.writeHead(404, { 'Content-Type': 'application/json' });
                 res.end(sendResponse(false, null, "Universe not found"));
                 return;
@@ -1655,6 +1670,9 @@ const httpServer = http.createServer(async (req, res) => {
                 iv: parsedBody.iv,
                 createdAt: new Date()
             })
+            if (universe.icon == undefined || universe.icon.length == 0) {
+                universe.icon = null
+            }
             transmitToUser(targetUser.username, JSON.stringify({
                 type: "universeInvite",
                 universeId: parsedBody.universeId,
@@ -1919,7 +1937,7 @@ const httpServer = http.createServer(async (req, res) => {
             const roomsCollection = db.collection("rooms");
             const membersCollection = db.collection("members");
             const room = await roomsCollection.findOne({ id: parsedBody.roomId });
-            if (room == null) {
+            if (room == null || room.deleted) {
                 res.writeHead(404, { 'Content-Type': 'application/json' });
                 res.end(sendResponse(false, null, "Room not found"));
                 return;
@@ -1927,7 +1945,7 @@ const httpServer = http.createServer(async (req, res) => {
             if (room.universeId != "&0") {
                 const universesCollection = db.collection("universes");
                 const universe = await universesCollection.findOne({ id: room.universeId });
-                if (universe == null) {
+                if (universe == null || universe.deleted) {
                     res.writeHead(404, { 'Content-Type': 'application/json' });
                     res.end(sendResponse(false, null, "Universe not found"));
                     return;
@@ -1938,12 +1956,22 @@ const httpServer = http.createServer(async (req, res) => {
                     res.end(sendResponse(false, null, "User is not member of this universe"));
                     return;                    
                 }
+                if (member.role != "owner" || member.role != "admin") {
+                    res.writeHead(403, { 'Content-Type': 'application/json' });
+                    res.end(sendResponse(false, null, "Permission denied"));
+                    return;
+                }
             } else {
                 const member = await membersCollection.findOne({ user: user.username, target: room.id });
                 if (member == null) {
                     res.writeHead(403, { 'Content-Type': 'application/json' });
                     res.end(sendResponse(false, null, "User is not member of this room"));
                     return;                    
+                }
+                if (member.role != "owner") {
+                    res.writeHead(403, { 'Content-Type': 'application/json' });
+                    res.end(sendResponse(false, null, "Permission denied"));
+                    return;
                 }
             }
             if (parsedBody.icon == undefined || typeof parsedBody.icon != "string" || !parsedBody.icon.startsWith("~")) {
@@ -2017,7 +2045,7 @@ const httpServer = http.createServer(async (req, res) => {
             const roomsCollection = db.collection("rooms");
             const membersCollection = db.collection("members");
             const room = await roomsCollection.findOne({ id: parsedBody.roomId });
-            if (room == null) {
+            if (room == null || room.deleted) {
                 res.writeHead(404, { 'Content-Type': 'application/json' });
                 res.end(sendResponse(false, null, "Room not found"));
                 return;
@@ -2025,7 +2053,7 @@ const httpServer = http.createServer(async (req, res) => {
             if (room.universeId != "&0") {
                 const universesCollection = db.collection("universes");
                 const universe = await universesCollection.findOne({ id: room.universeId });
-                if (universe == null) {
+                if (universe == null || universe.deleted) {
                     res.writeHead(404, { 'Content-Type': 'application/json' });
                     res.end(sendResponse(false, null, "Universe not found"));
                     return;
@@ -2036,12 +2064,22 @@ const httpServer = http.createServer(async (req, res) => {
                     res.end(sendResponse(false, null, "User is not member of this universe"));
                     return;                    
                 }
+                if (member.role != "admin" && member.role != "owner") {
+                    res.writeHead(403, { 'Content-Type': 'application/json' });
+                    res.end(sendResponse(false, null, "Permission denied"));
+                    return;
+                }
             } else {
                 const member = await membersCollection.findOne({ user: user.username, target: room.id });
                 if (member == null) {
                     res.writeHead(403, { 'Content-Type': 'application/json' });
                     res.end(sendResponse(false, null, "User is not member of this room"));
                     return;                    
+                }
+                if (member.role != "owner") {
+                    res.writeHead(403, { 'Content-Type': 'application/json' });
+                    res.end(sendResponse(false, null, "Permission denied"));
+                    return;
                 }
             }
             await transmitRoomUpdate(room.id, JSON.stringify({
@@ -2117,7 +2155,7 @@ const httpServer = http.createServer(async (req, res) => {
             const universesCollection = db.collection("universes");
             const membersCollection = db.collection("members");
             const universe = await universesCollection.findOne({ id: parsedBody.universeId });
-            if (universe == null) {
+            if (universe == null || universe.deleted) {
                 res.writeHead(404, { 'Content-Type': 'application/json' });
                 res.end(sendResponse(false, null, "Universe not found"));
                 return;
@@ -2127,6 +2165,11 @@ const httpServer = http.createServer(async (req, res) => {
                 res.writeHead(403, { 'Content-Type': 'application/json' });
                 res.end(sendResponse(false, null, "User is not member of this universe"));
                 return;                    
+            }
+            if (member.role != "admin" && member.role != "owner") {
+                res.writeHead(403, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Permission denied"));
+                return;
             }
             if (parsedBody.icon == undefined || typeof parsedBody.icon != "string" || !parsedBody.icon.startsWith("~")) {
                 universesCollection.updateOne({ id: universe.id }, { $set: { name: parsedBody.universeName } })
@@ -2198,7 +2241,7 @@ const httpServer = http.createServer(async (req, res) => {
             const universesCollection = db.collection("universes");
             const membersCollection = db.collection("members");
             const universe = await universesCollection.findOne({ id: parsedBody.universeId });
-            if (universe == null) {
+            if (universe == null || universe.deleted) {
                 res.writeHead(404, { 'Content-Type': 'application/json' });
                 res.end(sendResponse(false, null, "Universe not found"));
                 return;
@@ -2208,6 +2251,11 @@ const httpServer = http.createServer(async (req, res) => {
                 res.writeHead(403, { 'Content-Type': 'application/json' });
                 res.end(sendResponse(false, null, "User is not member of this universe"));
                 return;                    
+            }
+            if (member.role != "owner") {
+                res.writeHead(403, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Permission denied"));
+                return;
             }
             await transmitUniverseUpdate(universe.id, JSON.stringify({
                 type: "universeDelete",
@@ -2368,7 +2416,7 @@ const httpServer = http.createServer(async (req, res) => {
         collection.updateOne({ token: user.token }, { $set: { lastCommunication: new Date(), lastIP: ip } })
         const universesCollection = db.collection("universes");
         const universe = await universesCollection.findOne({ id: decodeURIComponent(args.universeId) });
-        if (universe == null) {
+        if (universe == null || universe.deleted) {
             res.writeHead(404, { 'Content-Type': 'application/json' });
             res.end(sendResponse(false, null, "Universe not found"));
             return;

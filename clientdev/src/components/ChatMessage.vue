@@ -1,6 +1,6 @@
 <script setup lang="ts">
     import { Button, Skeleton } from 'primevue';
-    let props = defineProps(["username", "icon", "message", "timestamp", "loading", "ownusername"]);
+    let props = defineProps(["username", "icon", "message", "timestamp", "loading", "ownusername", "role"]);
     let emits = defineEmits(["editMessage", "deleteMessage", "userInfo"]);
 
     async function editMessage() {
@@ -25,7 +25,7 @@
             <p class="message" v-if="props.loading == 'false'">{{ props.message }}</p>
             <Skeleton class="message" style="width: 500px;" v-if="props.loading == 'true'" />
         </div>
-        <div class="msg-options" :hidden="props.loading == 'true' || props.username != props.ownusername">
+        <div class="msg-options" :hidden="props.loading == 'true' || (props.username != props.ownusername && props.role != 'owner' && props.role != 'admin' && props.role != 'moderator')">
             <Button class="btn" @click="editMessage()">
                 <span class="material-symbols-rounded text-slate-300">
                     edit

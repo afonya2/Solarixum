@@ -59,6 +59,7 @@
     let settingsOpen = ref(false);
     let channelSettings = ref(false)
     let universeSettings = ref(false)
+    let ourRole = ref('member');
 
     let channelKey: CryptoKey
     let channelIv: ArrayBuffer
@@ -124,6 +125,9 @@
                 icon: res2.body.icon != null ? '/uploads/'+encodeURIComponent(res2.body.icon) : '../logo.svg',
                 rank: res.body.members[i].role || 'member'
             });
+            if (res.body.members[i].user == ownUser.value.username) {
+                ourRole.value = res.body.members[i].role || 'member';
+            }
         }
         roomMembers.value = tempMembers
         roomInfo.value = {
@@ -179,6 +183,30 @@
             name: res.body.name,
             id: res.body.id,
             icon: res.body.icon != null ? '/uploads/'+encodeURIComponent(res.body.icon) : '../logo.svg',
+        }
+        let req2 = await fetch(`/api/universe/info?universeId=${encodeURIComponent(universes.value[selectedUniverse.value].id)}`, {
+            method: "GET",
+            headers: {
+                'Authorization': localStorage.getItem('token') || '',
+                'protocol': PROT_NAME,
+                'protocol-version': PROT_VER
+            }
+        })
+        let res2 = await req2.json();
+        if (!res2.ok) {
+            if (res2.error === "Invalid token") {
+                localStorage.setItem("state", "1")
+                window.location.href = "";
+                return
+            }
+            toast.add({ severity: 'error', summary: 'Error', detail: res2.error || "An unknown error occurred.", life: 3000 });
+            return;
+        }
+        console.log(res2);
+        for (let i = 0; i < res2.body.members.length; i++) {
+            if (res2.body.members[i].user == ownUser.value.username) {
+                ourRole.value = res2.body.members[i].role || 'member';
+            }
         }
 
         getRooms()
@@ -1311,7 +1339,7 @@
             <div class="room-select overflow-auto">
                 <div class="flex items-center mb-4">
                     <h3 class="text-xl text-slate-400 select-none leading-none">Rooms</h3>
-                    <a href="#" @click="newRoomModal = true" class="ml-auto block w-fit select-none"><span class="material-symbols-rounded align-middle">add</span></a>
+                    <a href="#" @click="newRoomModal = true" class="ml-auto block w-fit select-none" v-if="ourRole == 'owner' || ourRole == 'admin' || selectedUniverse == -1"><span class="material-symbols-rounded align-middle">add</span></a>
                 </div>
                 <RoomButton v-for="_ in 10" v-if="roomsLoading" loading="true" />
                 <RoomButton v-for="(room, i) in rooms" :label="room.label" :icon="room.icon" :active="room.active" @click="selectRoom(i)" :hidden="roomsLoading" loading="false" />
@@ -1319,7 +1347,7 @@
             <div class="content-body">
                 <div class="messages overflow-auto">
                     <ChatMessage v-for="_ in 10" v-if="messagesLoading" loading="true" />
-                    <ChatMessage v-for="msg of messages" :username="msg.username" :icon="msg.icon" :message="msg.message" :timestamp="msg.timestamp" :id="msg.id" @edit-message="beginEditMessage(msg.id)" @delete-message="deleteMessage(msg.id)" @user-info="selectMember(msg.username)" :hidden="messagesLoading" loading="false" :ownusername="ownUser.username" />
+                    <ChatMessage v-for="msg of messages" :username="msg.username" :icon="msg.icon" :message="msg.message" :timestamp="msg.timestamp" :id="msg.id" @edit-message="beginEditMessage(msg.id)" @delete-message="deleteMessage(msg.id)" @user-info="selectMember(msg.username)" :hidden="messagesLoading" loading="false" :ownusername="ownUser.username" :role="ourRole" />
                 </div>
                 <div class="message-input">
                     <InputText type="text" placeholder="Send a message..." v-model="messageInput" class="w-full" @keypress.enter="sendMessage()" />
