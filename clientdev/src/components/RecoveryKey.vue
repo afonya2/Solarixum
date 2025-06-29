@@ -45,6 +45,29 @@
             return
         }
 
+        try {
+            let decryptedKeyVerifier = await crypto.subtle.decrypt(
+                {
+                    name: "RSA-OAEP",
+                },
+                privateKey,
+                utils.base64ToArray(res.body.encryptedKeyVerifier)
+            );
+            if (new TextDecoder().decode(decryptedKeyVerifier) == res.body.keyVerifier) {
+                localStorage.setItem("state", "5")
+                window.location.href = ""
+            } else {
+                alertMsg.value = "Key verifier mismatch.";
+                alerthidden.value = false;
+                return
+            }
+        } catch (e) {
+            console.error(e);
+            alertMsg.value = "Key verifier mismatch.";
+            alerthidden.value = false;
+            return
+        }
+
         utils.encryptPrivateKey(privateKey)
         localStorage.setItem("publicKey", utils.dataToBase64(publicKey));
         localStorage.setItem("state", "5");

@@ -343,12 +343,26 @@ const httpServer = http.createServer(async (req, res) => {
                 return;
             }
             collection.updateOne({ token: user.token }, { $set: { lastCommunication: new Date(), lastIP: ip } })
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(sendResponse(true, {
-                username: user.username,
-                privateKey: user.privateKey,
-                publicKey: user.publicKey
-            }));
+            try {
+                let keyVerifier = generateRandomString(32);
+                let encryped = crypto.publicEncrypt({
+                    key: base64ToPem(user.publicKey),
+                    padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
+                    oaepHash: 'sha256'
+                }, Buffer.from(keyVerifier));
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(true, {
+                    username: user.username,
+                    privateKey: user.privateKey,
+                    publicKey: user.publicKey,
+                    keyVerifier: keyVerifier,
+                    encryptedKeyVerifier: encryped.toString('base64'),
+                }));
+            } catch (e) {
+                res.writeHead(500, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Failed to encrypt key verifier"));
+                return;
+            }
         })
     } else if (clearUrl == "/api/login" && req.method === 'POST') {
         let body = '';
@@ -398,19 +412,25 @@ const httpServer = http.createServer(async (req, res) => {
                 return;
             }
             collection.updateOne({ token: user.token }, { $set: { lastCommunication: new Date(), lastIP: ip } })
-            let keyVerifier = generateRandomString(32);
-            let encryped = crypto.publicEncrypt({
-                key: base64ToPem(user.publicKey),
-                padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
-                oaepHash: 'sha256'
-            }, Buffer.from(keyVerifier));
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(sendResponse(true, {
-                username: user.username,
-                token: user.token,
-                keyVerifier: keyVerifier,
-                encryptedKeyVerifier: encryped.toString('base64'),
-            }));
+            try {
+                let keyVerifier = generateRandomString(32);
+                let encryped = crypto.publicEncrypt({
+                    key: base64ToPem(user.publicKey),
+                    padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
+                    oaepHash: 'sha256'
+                }, Buffer.from(keyVerifier));
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(true, {
+                    username: user.username,
+                    token: user.token,
+                    keyVerifier: keyVerifier,
+                    encryptedKeyVerifier: encryped.toString('base64'),
+                }));
+            } catch (e) {
+                res.writeHead(500, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Failed to encrypt key verifier"));
+                return;
+            }
         })
     } else if (clearUrl == "/api/room/create" && req.method === 'POST') {
         let body = '';
