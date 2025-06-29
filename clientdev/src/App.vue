@@ -70,6 +70,10 @@
             window.location.href = "";
             return
         }
+        messagesLoading.value = true;
+        if (rooms.value.length <= index) {
+            return
+        }
         
         selectedRoom.value = index;
         rooms.value.forEach((room, i) => {
@@ -135,6 +139,11 @@
         if (!token) {
             localStorage.setItem("state", "1")
             window.location.href = "";
+            return
+        }
+        messagesLoading.value = true;
+        roomsLoading.value = true;
+        if (universes.value.length <= index && index != -1) {
             return
         }
 
@@ -1134,7 +1143,15 @@
                         }
                     }
                 }
+                if (data.roomId == rooms.value[selectedRoom.value].id) {
+                    roomInfo.value = {
+                        id: data.universeId,
+                        icon: data.icon != null ? '/uploads/'+encodeURIComponent(data.icon) : '../logo.svg',
+                        name: data.roomName
+                    }
+                }
             } else if (data.type == "roomDelete") {
+                let temp = rooms.value[selectedRoom.value].id
                 if (data.universeId == "&0" && selectedUniverse.value == -1) {
                     for (let i = 0; i < rooms.value.length; i++) {
                         if (rooms.value[i].id == data.roomId) {
@@ -1150,6 +1167,9 @@
                         }
                     }
                 }
+                if (data.roomId == temp) {
+                    selectRoom(0)
+                }
             } else if (data.type == "universeUpdate") {
                 for (let i = 0; i < universes.value.length; i++) {
                     if (universes.value[i].id == data.universeId) {
@@ -1158,12 +1178,23 @@
                         break;
                     }
                 }
+                if (data.universeId == universes.value[selectedUniverse.value].id) {
+                    universeInfo.value = {
+                        id: data.universeId,
+                        icon: data.icon != null ? '/uploads/'+encodeURIComponent(data.icon) : '../logo.svg',
+                        name: data.universeName
+                    }
+                }
             } else if (data.type == "universeDelete") {
+                let temp = universes.value[selectedUniverse.value].id
                 for (let i = 0; i < universes.value.length; i++) {
                     if (universes.value[i].id == data.universeId) {
                         universes.value.splice(i, 1);
                         break;
                     }
+                }
+                if (data.universeId == temp) {
+                    selectUniverse(-1)
                 }
             }
         }
@@ -1273,9 +1304,9 @@
             <div class="content-head">
                 <h2 class="text-2xl">{{ selectedUniverse < universes.length ? (selectedUniverse == -1 ? "Home" : universes[selectedUniverse].label) : "Loading..." }}</h2>
                 <Button class="btn ml-5" @click="universeSettings = true" v-if="selectedUniverse != -1"><span class="material-symbols-rounded align-middle text-slate-300">settings</span></Button>
-                <Button class="btn ml-auto" @click="inviteModal = true"><span class="material-symbols-rounded align-middle text-slate-300">person_add</span></Button>
-                <Button class="btn" @click="showMembers = true"><span class="material-symbols-rounded align-middle text-slate-300">group</span></Button>
-                <Button class="btn" @click="channelSettings = true"><span class="material-symbols-rounded align-middle text-slate-300">settings</span></Button>
+                <Button class="btn ml-auto" @click="inviteModal = true" v-if="rooms.length > selectedRoom"><span class="material-symbols-rounded align-middle text-slate-300">person_add</span></Button>
+                <Button class="btn" @click="showMembers = true" v-if="rooms.length > selectedRoom"><span class="material-symbols-rounded align-middle text-slate-300">group</span></Button>
+                <Button class="btn" @click="channelSettings = true" v-if="rooms.length > selectedRoom"><span class="material-symbols-rounded align-middle text-slate-300">settings</span></Button>
             </div>
             <div class="room-select overflow-auto">
                 <div class="flex items-center mb-4">

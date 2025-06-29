@@ -1961,7 +1961,7 @@ const httpServer = http.createServer(async (req, res) => {
                 type: "roomUpdate",
                 roomId: room.id,
                 roomName: parsedBody.roomName,
-                icon: parsedBody.icon,
+                icon: parsedBody.icon || room.icon,
                 universeId: room.universeId,
                 protocol: PROT_NAME,
                 protocolVersion: PROT_VER
@@ -2143,7 +2143,7 @@ const httpServer = http.createServer(async (req, res) => {
                 type: "universeUpdate",
                 universeId: universe.id,
                 universeName: parsedBody.universeName,
-                icon: parsedBody.icon,
+                icon: parsedBody.icon || universe.icon,
                 protocol: PROT_NAME,
                 protocolVersion: PROT_VER
             }))
