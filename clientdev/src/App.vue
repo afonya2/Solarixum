@@ -10,6 +10,7 @@
     import UserInformation from './components/UserInformation.vue';
     import Settings from './components/Settings.vue';
     import ChannelSettings from './components/ChannelSettings.vue';
+    import UniverseSettings from './components/UniverseSettings.vue';
 
     const PROT_NAME = 'Solarixum Protocol';
     const PROT_VER = '0.1.0';
@@ -50,8 +51,14 @@
         id: '',
         icon: '../logo.svg',
     })
+    let universeInfo = ref({
+        name: '',
+        id: '',
+        icon: '../logo.svg',
+    })
     let settingsOpen = ref(false);
     let channelSettings = ref(false)
+    let universeSettings = ref(false)
 
     let channelKey: CryptoKey
     let channelIv: ArrayBuffer
@@ -123,11 +130,48 @@
 
         getMessages()
     }
-    function selectUniverse(index: number) {
+    async function selectUniverse(index: number) {
+        const token = localStorage.getItem('token');
+        if (!token) {
+            localStorage.setItem("state", "1")
+            window.location.href = "";
+            return
+        }
+
         selectedUniverse.value = index;
         universes.value.forEach((universe, i) => {
             universe.active = i === index;
         });
+        if (selectedUniverse.value == -1) {
+            getRooms()
+            return
+        }
+
+        let req = await fetch(`/api/universe/info?universeId=${encodeURIComponent(universes.value[selectedUniverse.value].id)}`, {
+            method: "GET",
+            headers: {
+                'Authorization': localStorage.getItem('token') || '',
+                'protocol': PROT_NAME,
+                'protocol-version': PROT_VER
+            }
+        })
+        let res = await req.json();
+        if (!res.ok) {
+            if (res.error === "Invalid token") {
+                localStorage.setItem("state", "1")
+                window.location.href = "";
+                return
+            }
+            toast.add({ severity: 'error', summary: 'Error', detail: res.error || "An unknown error occurred.", life: 3000 });
+            return;
+        }
+        console.log(res);
+        universeInfo.value = {
+            name: res.body.name,
+            id: res.body.id,
+            icon: res.body.icon != null ? '/uploads/'+encodeURIComponent(res.body.icon) : '../logo.svg',
+        }
+
         getRooms()
     }
     async function getRooms() {
@@ -1106,6 +1150,21 @@
                         }
                     }
                 }
+            } else if (data.type == "universeUpdate") {
+                for (let i = 0; i < universes.value.length; i++) {
+                    if (universes.value[i].id == data.universeId) {
+                        universes.value[i].label = data.universeName;
+                        universes.value[i].icon = data.icon != null ? '/uploads/'+encodeURIComponent(data.icon) : '../logo.svg';
+                        break;
+                    }
+                }
+            } else if (data.type == "universeDelete") {
+                for (let i = 0; i < universes.value.length; i++) {
+                    if (universes.value[i].id == data.universeId) {
+                        universes.value.splice(i, 1);
+                        break;
+                    }
+                }
             }
         }
         socket.onclose = (event) => {
@@ -1198,6 +1257,9 @@
         <Dialog v-model:visible="channelSettings" modal header="Channel settings" style="width: fit-content;">
             <ChannelSettings :name="roomInfo.name" :icon="roomInfo.icon" :id="roomInfo.id" @notify="notify" @close="channelSettings = false" />
         </Dialog>
+        <Dialog v-model:visible="universeSettings" modal header="Universe settings" style="width: fit-content;">
+            <UniverseSettings :name="universeInfo.name" :icon="universeInfo.icon" :id="universeInfo.id" @notify="notify" @close="universeSettings = false" />
+        </Dialog>
         <div class="universe-select overflow-auto">
             <UniverseButton label="Home" icon="../logo.svg" :active="selectedUniverse == -1" @click="selectUniverse(-1)" />
             <Divider />
@@ -1210,6 +1272,7 @@
         <div class="content">
             <div class="content-head">
                 <h2 class="text-2xl">{{ selectedUniverse < universes.length ? (selectedUniverse == -1 ? "Home" : universes[selectedUniverse].label) : "Loading..." }}</h2>
+                <Button class="btn ml-5" @click="universeSettings = true" v-if="selectedUniverse != -1"><span class="material-symbols-rounded align-middle text-slate-300">settings</span></Button>
                 <Button class="btn ml-auto" @click="inviteModal = true"><span class="material-symbols-rounded align-middle text-slate-300">person_add</span></Button>
                 <Button class="btn" @click="showMembers = true"><span class="material-symbols-rounded align-middle text-slate-300">group</span></Button>
                 <Button class="btn" @click="channelSettings = true"><span class="material-symbols-rounded align-middle text-slate-300">settings</span></Button>

@@ -8,16 +8,16 @@
     const PROT_VER = '0.1.0';
 
     let fileupload = ref();
-    let roomName = ref(props.name);
+    let universeName = ref(props.name);
 
-    async function updateRoom() {
+    async function updateUniverse() {
         if (fileupload.value.hasFiles) {
             fileupload.value.upload();
         } else {
-            await sendRoomData();
+            await sendUniverseData();
         }
     }
-    async function sendRoomData(icon?: string) {
+    async function sendUniverseData(icon?: string) {
         const token = localStorage.getItem("token");
         if (!token) {
             localStorage.setItem("state", "1")
@@ -25,14 +25,14 @@
             return;
         }
 
-        let req = await fetch("/api/room/update", {
+        let req = await fetch("/api/universe/update", {
             method: "POST",
             headers: {
                 "Content-Type": "application/json"
             },
             body: JSON.stringify({
-                roomId: props.id,
-                roomName: roomName.value,
+                universeId: props.id,
+                universeName: universeName.value,
                 icon: icon,
                 token: token,
                 protocol: PROT_NAME,
@@ -46,10 +46,10 @@
                 window.location.href = "";
                 return
             }
-            emits("notify", { severity: "error", summary: "Error", detail: res.error || "Failed to update room data.", life: 5000 });
+            emits("notify", { severity: "error", summary: "Error", detail: res.error || "Failed to update universe data.", life: 5000 });
             return;
         }
-        emits("notify", { severity: "success", summary: "Success", detail: "Room data updated successfully.", life: 3000 });
+        emits("notify", { severity: "success", summary: "Success", detail: "Universe data updated successfully.", life: 3000 });
         emits("close");
     }
     async function onUpload(e: FileUploadUploadEvent) {
@@ -59,7 +59,7 @@
             emits("notify", { severity: "error", summary: "Error", detail: res.error || "Failed to upload icon picture.", life: 5000 });
             return;
         }
-        sendRoomData(res.body.fileId)
+        sendUniverseData(res.body.fileId)
     }
     async function beforeSend(e: FileUploadBeforeSendEvent) {
         const token = localStorage.getItem("token");
@@ -70,7 +70,7 @@
         }
         e.xhr.setRequestHeader("Authorization", token);
     }
-    async function deleteRoom() {
+    async function deleteUniverse() {
         const token = localStorage.getItem("token");
         if (!token) {
             localStorage.setItem("state", "1")
@@ -78,13 +78,13 @@
             return;
         }
 
-        let req = await fetch("/api/room/delete", {
+        let req = await fetch("/api/universe/delete", {
             method: "POST",
             headers: {
                 "Content-Type": "application/json"
             },
             body: JSON.stringify({
-                roomId: props.id,
+                universeId: props.id,
                 token: token,
                 protocol: PROT_NAME,
                 protocolVersion: PROT_VER
@@ -97,10 +97,10 @@
                 window.location.href = "";
                 return
             }
-            emits("notify", { severity: "error", summary: "Error", detail: res.error || "Failed to delete room.", life: 5000 });
+            emits("notify", { severity: "error", summary: "Error", detail: res.error || "Failed to delete universe.", life: 5000 });
             return;
         }
-        emits("notify", { severity: "success", summary: "Success", detail: "Room deleted successfully.", life: 3000 });
+        emits("notify", { severity: "success", summary: "Success", detail: "Universe deleted successfully.", life: 3000 });
         emits("close");
     }
 </script>
@@ -116,11 +116,11 @@
             </div>
         </div>
         <p class="mb-2 block">Upload a picture: </p>
-        <FileUpload ref="fileupload" mode="basic" name="channelicon" url="/api/upload" accept="image/*" class="mb-2" @upload="onUpload" @before-send="beforeSend" />
-        <InputText class="w-full" v-model="roomName" />
+        <FileUpload ref="fileupload" mode="basic" name="universeicon" url="/api/upload" accept="image/*" class="mb-2" @upload="onUpload" @before-send="beforeSend" />
+        <InputText class="w-full" v-model="universeName" />
         <div class="flex items-center">
-            <Button class="float-end mt-2 block ml-auto" @click="deleteRoom()" severity="danger">Delete</Button>
-            <Button class="float-end mt-2 block ml-2" @click="updateRoom()">Update</Button>
+            <Button class="float-end mt-2 block ml-auto" @click="deleteUniverse()" severity="danger">Delete</Button>
+            <Button class="float-end mt-2 block ml-2" @click="updateUniverse()">Update</Button>
         </div>
     </div>
 </template>
