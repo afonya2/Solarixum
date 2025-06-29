@@ -188,7 +188,8 @@ const httpServer = http.createServer(async (req, res) => {
             return;
         }
         pathRemaining = pathRemaining.substring(1)
-        let file = `./uploads/${path.normalize(pathRemaining)}`;
+        const files = fs.readdirSync('./uploads');
+        let file = `./uploads/${files.find(f => f.startsWith(pathRemaining))}`;
         if (!fs.existsSync(file)) {
             res.writeHead(404, { 'Content-Type': 'application/json' });
             res.end(sendResponse(false, null, "Not Found"));
@@ -1866,6 +1867,66 @@ const httpServer = http.createServer(async (req, res) => {
             res.writeHead(500, { 'Content-Type': 'application/json' });
             res.end(sendResponse(false, null, "Failed to upload file"));
         }
+    } else if (clearUrl == "/api/logout" && req.method == 'POST') {
+        let body = '';
+        req.on('data', async (data) => {
+            body += data.toString();
+        })
+        req.on('end', async () => {
+            let parsedBody: any;
+            try {
+                parsedBody = JSON.parse(body);
+            } catch (e) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid JSON"));
+                return;
+            }
+            if (parsedBody.protocol != PROT_NAME) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Unknown protocol"));
+                return;
+            }
+            if (parsedBody.protocolVersion != PROT_VER) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Unsupported protocol version"));
+                return;
+            }
+            if (parsedBody.token == undefined || typeof parsedBody.token != "string") {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid token"));
+                return;
+            }
+            const collection = db.collection("users");
+            const user = await collection.findOne({ token: parsedBody.token });
+            if (user == null) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid token"));
+                return;
+            }
+            if (user.suspended) {
+                res.writeHead(403, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "User is suspended"));
+                return;
+            }
+            let token: string;
+            let check = 0
+            while (true) {
+                token = generateRandomString(256);
+                let existingToken = await collection.findOne({ token: token });
+                if (existingToken == null) {
+                    break;
+                }
+                check++;
+                if (check > 10) {
+                    res.writeHead(500, { 'Content-Type': 'application/json' });
+                    res.end(sendResponse(false, null, "Could not generate token, please try again later..."));
+                    return;
+                }
+            }
+            collection.updateOne({ token: user.token }, { $set: { lastCommunication: new Date(), lastIP: ip, token: token } })
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(sendResponse(true, null));
+        })
     } else {
         res.writeHead(404, { 'Content-Type': 'application/json' });
         res.end(sendResponse(false, null, "Not Found"));

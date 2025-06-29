@@ -103,7 +103,7 @@
             }
             tempMembers.push({
                 username: res2.body.username,
-                icon: res2.body.icon != null ? '/uploads/'+encodeURIComponent(res2.body.icon)+'.png' : '../logo.svg',
+                icon: res2.body.icon != null ? '/uploads/'+encodeURIComponent(res2.body.icon) : '../logo.svg',
                 rank: res.body.members[i].role || 'member'
             });
         }
@@ -272,7 +272,7 @@
                 preMessages.push({
                     message: new TextDecoder().decode(decryptedMessage),
                     username: message.user,
-                    icon: userRes.body.icon != null ? '/uploads/'+encodeURIComponent(userRes.body.icon)+'.png' : '../logo.svg',
+                    icon: userRes.body.icon != null ? '/uploads/'+encodeURIComponent(userRes.body.icon) : '../logo.svg',
                     timestamp: new Date(message.createdAt).getTime(),
                     id: message.id
                 })
@@ -280,7 +280,7 @@
                 preMessages.push({
                     message: "Failed to decrypt message",
                     username: message.user,
-                    icon: userRes.body.icon != null ? '/uploads/'+encodeURIComponent(userRes.body.icon)+'.png' : '../logo.svg',
+                    icon: userRes.body.icon != null ? '/uploads/'+encodeURIComponent(userRes.body.icon) : '../logo.svg',
                     timestamp: new Date(message.createdAt).getTime(),
                     id: message.id
                 });
@@ -892,7 +892,7 @@
         }
         userInfo.value = {
             username: res.body.username,
-            icon: res.body.icon != null ? '/uploads/'+encodeURIComponent(res.body.icon)+'.png' : '../logo.svg',
+            icon: res.body.icon != null ? '/uploads/'+encodeURIComponent(res.body.icon) : '../logo.svg',
             bio: res.body.bio || 'This user has no bio.'
         };
         showMembers.value = false;
@@ -1081,7 +1081,7 @@
         }
         ownUser.value = {
             username: res.body.username,
-            icon: res.body.icon != null ? '/uploads/'+encodeURIComponent(res.body.icon)+'.png' : '../logo.svg',
+            icon: res.body.icon != null ? '/uploads/'+encodeURIComponent(res.body.icon) : '../logo.svg',
             bio: res.body.bio || ''
         };
     }
