@@ -947,6 +947,24 @@
             } else if (data.type == "message") {
                 let currentRoom = rooms.value[selectedRoom.value];
                 if (currentRoom && currentRoom.id == data.roomId) {
+                    let userReq = await fetch(`/api/user/info?username=${encodeURIComponent(data.user)}`, {
+                        method: "GET",
+                        headers: {
+                            'Authorization': localStorage.getItem('token') || '',
+                            'protocol': PROT_NAME,
+                            'protocol-version': PROT_VER
+                        }
+                    })
+                    let userRes = await userReq.json();
+                    if (!userRes.ok) {
+                        if (userRes.error === "Invalid token") {
+                            localStorage.setItem("state", "1")
+                            window.location.href = "";
+                            return
+                        }
+                        toast.add({ severity: 'error', summary: 'Error', detail: userRes.error || "An unknown error occurred.", life: 3000 });
+                        return;
+                    }
                     try {
                         const decryptedMessage = await crypto.subtle.decrypt(
                             {
@@ -959,7 +977,7 @@
                         messages.value.push({
                             message: new TextDecoder().decode(decryptedMessage),
                             username: data.user,
-                            icon: '../logo.svg',
+                            icon: userRes.body.icon != null ? '/uploads/'+encodeURIComponent(userRes.body.icon) : '../logo.svg',
                             timestamp: new Date(data.createdAt).getTime(),
                             id: data.id
                         })
@@ -967,7 +985,7 @@
                         messages.value.push({
                             message: "Failed to decrypt message",
                             username: data.user,
-                            icon: '../logo.svg',
+                            icon: userRes.body.icon != null ? '/uploads/'+encodeURIComponent(userRes.body.icon) : '../logo.svg',
                             timestamp: new Date(data.createdAt).getTime(),
                             id: data.id
                         });
