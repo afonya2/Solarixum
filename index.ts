@@ -517,12 +517,14 @@ const httpServer = http.createServer(async (req, res) => {
                     name: parsedBody.roomName,
                     owner: user.username,
                     createdAt: new Date(),
+                    icon: "",
                     universeId: decodeURIComponent(args.universeId)
                 })
                 transmitUniverseUpdate(universe.id, JSON.stringify({
                     type: "roomCreated",
                     roomId: roomId,
                     roomName: parsedBody.roomName,
+                    icon: null,
                     universeId: decodeURIComponent(args.universeId),
                     protocol: PROT_NAME,
                     protocolVersion: PROT_VER
@@ -1165,7 +1167,7 @@ const httpServer = http.createServer(async (req, res) => {
             }
             const roomsCollection = db.collection("rooms");
             const membersCollection = db.collection("members");
-            const room = await roomsCollection.findOne({ id: parsedBody.roomId });
+            let room = await roomsCollection.findOne({ id: parsedBody.roomId });
             if (room == null) {
                 res.writeHead(404, { 'Content-Type': 'application/json' });
                 res.end(sendResponse(false, null, "Room not found"));
@@ -1203,10 +1205,14 @@ const httpServer = http.createServer(async (req, res) => {
                 iv: parsedBody.iv,
                 createdAt: new Date()
             })
+            if (room.icon == undefined || room.icon.length == 0) {
+                room.icon = null
+            }
             transmitToUser(targetUser.username, JSON.stringify({
                 type: "roomInvite",
                 roomId: parsedBody.roomId,
                 roomName: room.name,
+                icon: room.icon,
                 protocol: PROT_NAME,
                 protocolVersion: PROT_VER
             }))
@@ -1301,10 +1307,14 @@ const httpServer = http.createServer(async (req, res) => {
         }
         let resRooms: any[] = [];
         for (let i = 0; i < rooms.length; i++) {
+            if (rooms[i].icon == undefined || rooms[i].icon.length == 0) {
+                rooms[i].icon = null
+            }
             resRooms.push({
                 id: rooms[i].id,
                 name: rooms[i].name,
                 owner: rooms[i].owner,
+                icon: rooms[i].icon,
                 createdAt: rooms[i].createdAt
             });
         }
@@ -1341,7 +1351,7 @@ const httpServer = http.createServer(async (req, res) => {
         collection.updateOne({ token: user.token }, { $set: { lastCommunication: new Date(), lastIP: ip } })
         const roomsCollection = db.collection("rooms");
         const membersCollection = db.collection("members");
-        const room = await roomsCollection.findOne({ id: decodeURIComponent(args.roomId) });
+        let room = await roomsCollection.findOne({ id: decodeURIComponent(args.roomId) });
         if (room == null) {
             res.writeHead(404, { 'Content-Type': 'application/json' });
             res.end(sendResponse(false, null, "Room not found"));
@@ -1382,10 +1392,14 @@ const httpServer = http.createServer(async (req, res) => {
             });
         }
         res.writeHead(200, { 'Content-Type': 'application/json' });
+        if (room.icon == undefined || room.icon.length == 0) {
+            room.icon = null
+        }
         res.end(sendResponse(true, {
             id: room.id,
             name: room.name,
             owner: room.owner,
+            icon: room.icon,
             createdAt: room.createdAt,
             universeId: room.universeId,
             members: resMembers
@@ -1428,10 +1442,14 @@ const httpServer = http.createServer(async (req, res) => {
         }
         let resUniverses: any[] = [];
         for (let i = 0; i < universes.length; i++) {
+            if (universes[i].icon == undefined || universes[i].icon.length == 0) {
+                universes[i].icon = null
+            }
             resUniverses.push({
                 id: universes[i].id,
                 name: universes[i].name,
                 owner: universes[i].owner,
+                icon: universes[i].icon,
                 createdAt: universes[i].createdAt
             });
         }
@@ -1502,6 +1520,7 @@ const httpServer = http.createServer(async (req, res) => {
                 id: universeId,
                 name: parsedBody.universeName,
                 owner: user.username,
+                icon: "",
                 createdAt: new Date()
             })
             keyCollection.insertOne({
@@ -1630,6 +1649,7 @@ const httpServer = http.createServer(async (req, res) => {
                 type: "universeInvite",
                 universeId: parsedBody.universeId,
                 universeName: universe.name,
+                icon: universe.icon,
                 protocol: PROT_NAME,
                 protocolVersion: PROT_VER
             }))
@@ -1830,9 +1850,112 @@ const httpServer = http.createServer(async (req, res) => {
             res.end(sendResponse(true, {
                 username: user.username,
                 createdAt: user.createdAt,
-                bio: parsedBody.bio,
-                icon: parsedBody.icon
+                bio: user.bio,
+                icon: user.icon
             }));
+        })
+    } else if (clearUrl == "/api/room/update" && req.method == 'POST') {
+        let body = '';
+        req.on('data', async (data) => {
+            body += data.toString();
+        })
+        req.on('end', async () => {
+            let parsedBody: any;
+            try {
+                parsedBody = JSON.parse(body);
+            } catch (e) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid JSON"));
+                return;
+            }
+            if (parsedBody.protocol != PROT_NAME) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Unknown protocol"));
+                return;
+            }
+            if (parsedBody.protocolVersion != PROT_VER) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Unsupported protocol version"));
+                return;
+            }
+            if (parsedBody.token == undefined || typeof parsedBody.token != "string") {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid token"));
+                return;
+            }
+            if (parsedBody.roomId == undefined || typeof parsedBody.roomId != "string" || !parsedBody.roomId.startsWith("#")) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid room ID"));
+                return;
+            }
+            if (parsedBody.roomName == undefined || typeof parsedBody.roomName != "string" || parsedBody.roomName.length < 3 || parsedBody.roomName.length > 32) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid room name"));
+                return;
+            }
+            const collection = db.collection("users");
+            const user = await collection.findOne({ token: parsedBody.token });
+            if (user == null) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid token"));
+                return;
+            }
+            if (user.suspended) {
+                res.writeHead(403, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "User is suspended"));
+                return;
+            }
+            collection.updateOne({ token: user.token }, { $set: { lastCommunication: new Date(), lastIP: ip } })
+            const roomsCollection = db.collection("rooms");
+            const membersCollection = db.collection("members");
+            const room = await roomsCollection.findOne({ id: parsedBody.roomId });
+            if (room == null) {
+                res.writeHead(404, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Room not found"));
+                return;
+            }
+            if (room.universeId != "&0") {
+                const universesCollection = db.collection("universes");
+                const universe = await universesCollection.findOne({ id: room.universeId });
+                if (universe == null) {
+                    res.writeHead(404, { 'Content-Type': 'application/json' });
+                    res.end(sendResponse(false, null, "Universe not found"));
+                    return;
+                }
+                const member = await membersCollection.findOne({ user: user.username, target: universe.id });
+                if (member == null) {
+                    res.writeHead(403, { 'Content-Type': 'application/json' });
+                    res.end(sendResponse(false, null, "User is not member of this universe"));
+                    return;                    
+                }
+            } else {
+                const member = await membersCollection.findOne({ user: user.username, target: room.id });
+                if (member == null) {
+                    res.writeHead(403, { 'Content-Type': 'application/json' });
+                    res.end(sendResponse(false, null, "User is not member of this room"));
+                    return;                    
+                }
+            }
+            if (parsedBody.icon == undefined || typeof parsedBody.icon != "string" || !parsedBody.icon.startsWith("~")) {
+                roomsCollection.updateOne({ id: room.id }, { $set: { name: parsedBody.roomName } })
+            } else {
+                roomsCollection.updateOne({ id: room.id }, { $set: { name: parsedBody.roomName, icon: parsedBody.icon } })
+            }
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(sendResponse(true, {
+                roomId: room.id,
+                roomName: room.name,
+                icon: room.icon
+            }));
+            transmitRoomUpdate(room.id, JSON.stringify({
+                type: "roomUpdate",
+                roomId: room.id,
+                roomName: parsedBody.roomName,
+                icon: parsedBody.icon,
+                universeId: room.universeId,
+                protocol: PROT_NAME,
+                protocolVersion: PROT_VER
+            }))
         })
     } else if (clearUrl == "/api/upload" && req.method == 'POST') {
         const collection = db.collection("users");

@@ -63,7 +63,7 @@
             },
             body: JSON.stringify({
                 bio: bio.value,
-                icon: icon || props.icon,
+                icon: icon,
                 token: token,
                 protocol: PROT_NAME,
                 protocolVersion: PROT_VER

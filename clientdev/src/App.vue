@@ -9,6 +9,7 @@
     import UserCard from './components/UserCard.vue';
     import UserInformation from './components/UserInformation.vue';
     import Settings from './components/Settings.vue';
+    import ChannelSettings from './components/ChannelSettings.vue';
 
     const PROT_NAME = 'Solarixum Protocol';
     const PROT_VER = '0.1.0';
@@ -44,7 +45,13 @@
         icon: '../logo.svg',
         bio: 'This is your bio.'
     })
+    let roomInfo = ref({
+        name: '',
+        id: '',
+        icon: '../logo.svg',
+    })
     let settingsOpen = ref(false);
+    let channelSettings = ref(false)
 
     let channelKey: CryptoKey
     let channelIv: ArrayBuffer
@@ -108,6 +115,11 @@
             });
         }
         roomMembers.value = tempMembers
+        roomInfo.value = {
+            name: res.body.name,
+            id: res.body.id,
+            icon: res.body.icon != null ? '/uploads/'+encodeURIComponent(res.body.icon) : '../logo.svg',
+        }
 
         getMessages()
     }
@@ -147,7 +159,7 @@
         rooms.value = res.body.map((room: any) => ({
             id: room.id,
             label: room.name,
-            icon: '../logo.svg',
+            icon: room.icon != null ? '/uploads/'+encodeURIComponent(room.icon) : '../logo.svg',
             active: false
         }));
         roomsLoading.value = false;
@@ -497,7 +509,7 @@
         universes.value = res.body.map((universe: any) => ({
             id: universe.id,
             label: universe.name,
-            icon: '../logo.svg',
+            icon: universe.icon != null ? '/uploads/'+encodeURIComponent(universe.icon) : '../logo.svg',
             active: false
         }));
         selectUniverse(-1)
@@ -996,7 +1008,7 @@
                     rooms.value.push({
                         id: data.roomId,
                         label: data.roomName,
-                        icon: '../logo.svg',
+                        icon: data.icon != null ? '/uploads/'+encodeURIComponent(data.icon) : '../logo.svg',
                         active: false
                     })
                 }
@@ -1004,7 +1016,7 @@
                 universes.value.push({
                     id: data.universeId,
                     label: data.universeName,
-                    icon: '../logo.svg',
+                    icon: data.icon != null ? '/uploads/'+encodeURIComponent(data.icon) : '../logo.svg',
                     active: false
                 })
             } else if (data.type == "roomCreated") {
@@ -1012,14 +1024,14 @@
                     rooms.value.push({
                         id: data.roomId,
                         label: data.roomName,
-                        icon: '../logo.svg',
+                        icon: data.icon != null ? '/uploads/'+encodeURIComponent(data.icon) : '../logo.svg',
                         active: false
                     })
                 } else if (data.universeId == universes.value[selectedUniverse.value].id) {
                     rooms.value.push({
                         id: data.roomId,
                         label: data.roomName,
-                        icon: '../logo.svg',
+                        icon: data.icon != null ? '/uploads/'+encodeURIComponent(data.icon) : '../logo.svg',
                         active: false
                     })
                 }
@@ -1056,6 +1068,24 @@
                     for (let i = 0; i < messages.value.length; i++) {
                         if (messages.value[i].id == data.id) {
                             messages.value.splice(i, 1);
+                            break;
+                        }
+                    }
+                }
+            } else if (data.type == "roomUpdate") {
+                if (data.universeId == "&0" && selectedUniverse.value == -1) {
+                    for (let i = 0; i < rooms.value.length; i++) {
+                        if (rooms.value[i].id == data.roomId) {
+                            rooms.value[i].label = data.roomName;
+                            rooms.value[i].icon = data.icon != null ? '/uploads/'+encodeURIComponent(data.icon) : '../logo.svg';
+                            break;
+                        }
+                    }
+                } else if (data.universeId == universes.value[selectedUniverse.value].id) {
+                    for (let i = 0; i < rooms.value.length; i++) {
+                        if (rooms.value[i].id == data.roomId) {
+                            rooms.value[i].label = data.roomName;
+                            rooms.value[i].icon = data.icon != null ? '/uploads/'+encodeURIComponent(data.icon) : '../logo.svg';
                             break;
                         }
                     }
@@ -1149,6 +1179,9 @@
         <Dialog v-model:visible="settingsOpen" modal header="Settings" style="width: fit-content;">
             <Settings :username="ownUser.username" :icon="ownUser.icon" :bio="ownUser.bio" @notify="notify" />
         </Dialog>
+        <Dialog v-model:visible="channelSettings" modal header="Channel settings" style="width: fit-content;">
+            <ChannelSettings :name="roomInfo.name" :icon="roomInfo.icon" :id="roomInfo.id" @notify="notify" @close="channelSettings = false" />
+        </Dialog>
         <div class="universe-select overflow-auto">
             <UniverseButton label="Home" icon="../logo.svg" :active="selectedUniverse == -1" @click="selectUniverse(-1)" />
             <Divider />
@@ -1163,6 +1196,7 @@
                 <h2 class="text-2xl">{{ selectedUniverse < universes.length ? (selectedUniverse == -1 ? "Home" : universes[selectedUniverse].label) : "Loading..." }}</h2>
                 <Button class="btn ml-auto" @click="inviteModal = true"><span class="material-symbols-rounded align-middle text-slate-300">person_add</span></Button>
                 <Button class="btn" @click="showMembers = true"><span class="material-symbols-rounded align-middle text-slate-300">group</span></Button>
+                <Button class="btn" @click="channelSettings = true"><span class="material-symbols-rounded align-middle text-slate-300">settings</span></Button>
             </div>
             <div class="room-select overflow-auto">
                 <div class="flex items-center mb-4">
