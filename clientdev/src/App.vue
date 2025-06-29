@@ -1090,6 +1090,22 @@
                         }
                     }
                 }
+            } else if (data.type == "roomDelete") {
+                if (data.universeId == "&0" && selectedUniverse.value == -1) {
+                    for (let i = 0; i < rooms.value.length; i++) {
+                        if (rooms.value[i].id == data.roomId) {
+                            rooms.value.splice(i, 1);
+                            break;
+                        }
+                    }
+                } else if (data.universeId == universes.value[selectedUniverse.value].id) {
+                    for (let i = 0; i < rooms.value.length; i++) {
+                        if (rooms.value[i].id == data.roomId) {
+                            rooms.value.splice(i, 1);
+                            break;
+                        }
+                    }
+                }
             }
         }
         socket.onclose = (event) => {

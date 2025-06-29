@@ -71,6 +71,39 @@
         }
         e.xhr.setRequestHeader("Authorization", token);
     }
+    async function deleteRoom() {
+        const token = localStorage.getItem("token");
+        if (!token) {
+            localStorage.setItem("state", "1")
+            window.location.href = "";
+            return;
+        }
+
+        let req = await fetch("/api/room/delete", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+                roomId: props.id,
+                token: token,
+                protocol: PROT_NAME,
+                protocolVersion: PROT_VER
+            })
+        });
+        let res = await req.json();
+        if (!res.ok) {
+            if (res.error === "Invalid token") {
+                localStorage.setItem("state", "1")
+                window.location.href = "";
+                return
+            }
+            emits("notify", { severity: "error", summary: "Error", detail: res.error || "Failed to delete room.", life: 5000 });
+            return;
+        }
+        emits("notify", { severity: "success", summary: "Success", detail: "Room deleted successfully.", life: 3000 });
+        emits("close");
+    }
 </script>
 
 <template>
@@ -87,7 +120,7 @@
         <FileUpload ref="fileupload" mode="basic" name="channelicon" url="/api/upload" accept="image/*" class="mb-2" @upload="onUpload" @before-send="beforeSend" />
         <InputText class="w-full" v-model="roomName" />
         <div class="flex items-center">
-            <Button class="float-end mt-2 block ml-auto" @click="" severity="danger">Delete</Button>
+            <Button class="float-end mt-2 block ml-auto" @click="deleteRoom()" severity="danger">Delete</Button>
             <Button class="float-end mt-2 block ml-2" @click="updateRoom()">Update</Button>
         </div>
     </div>

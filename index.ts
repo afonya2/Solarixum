@@ -518,7 +518,8 @@ const httpServer = http.createServer(async (req, res) => {
                     owner: user.username,
                     createdAt: new Date(),
                     icon: "",
-                    universeId: decodeURIComponent(args.universeId)
+                    universeId: decodeURIComponent(args.universeId),
+                    deleted: false
                 })
                 transmitUniverseUpdate(universe.id, JSON.stringify({
                     type: "roomCreated",
@@ -534,8 +535,10 @@ const httpServer = http.createServer(async (req, res) => {
                     id: roomId,
                     name: parsedBody.roomName,
                     owner: user.username,
+                    icon: "",
                     createdAt: new Date(),
-                    universeId: "&0"
+                    universeId: "&0",
+                    deleted: false
                 })
                 keyCollection.insertOne({
                     user: user.username,
@@ -1307,6 +1310,9 @@ const httpServer = http.createServer(async (req, res) => {
         }
         let resRooms: any[] = [];
         for (let i = 0; i < rooms.length; i++) {
+            if (rooms[i].deleted) {
+                continue;
+            }
             if (rooms[i].icon == undefined || rooms[i].icon.length == 0) {
                 rooms[i].icon = null
             }
@@ -1956,6 +1962,101 @@ const httpServer = http.createServer(async (req, res) => {
                 protocol: PROT_NAME,
                 protocolVersion: PROT_VER
             }))
+        })
+    } else if (clearUrl == "/api/room/delete" && req.method == 'POST') {
+        let body = '';
+        req.on('data', async (data) => {
+            body += data.toString();
+        })
+        req.on('end', async () => {
+            let parsedBody: any;
+            try {
+                parsedBody = JSON.parse(body);
+            } catch (e) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid JSON"));
+                return;
+            }
+            if (parsedBody.protocol != PROT_NAME) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Unknown protocol"));
+                return;
+            }
+            if (parsedBody.protocolVersion != PROT_VER) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Unsupported protocol version"));
+                return;
+            }
+            if (parsedBody.token == undefined || typeof parsedBody.token != "string") {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid token"));
+                return;
+            }
+            if (parsedBody.roomId == undefined || typeof parsedBody.roomId != "string" || !parsedBody.roomId.startsWith("#")) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid room ID"));
+                return;
+            }
+            const collection = db.collection("users");
+            const user = await collection.findOne({ token: parsedBody.token });
+            if (user == null) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid token"));
+                return;
+            }
+            if (user.suspended) {
+                res.writeHead(403, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "User is suspended"));
+                return;
+            }
+            collection.updateOne({ token: user.token }, { $set: { lastCommunication: new Date(), lastIP: ip } })
+            const roomsCollection = db.collection("rooms");
+            const membersCollection = db.collection("members");
+            const room = await roomsCollection.findOne({ id: parsedBody.roomId });
+            if (room == null) {
+                res.writeHead(404, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Room not found"));
+                return;
+            }
+            if (room.universeId != "&0") {
+                const universesCollection = db.collection("universes");
+                const universe = await universesCollection.findOne({ id: room.universeId });
+                if (universe == null) {
+                    res.writeHead(404, { 'Content-Type': 'application/json' });
+                    res.end(sendResponse(false, null, "Universe not found"));
+                    return;
+                }
+                const member = await membersCollection.findOne({ user: user.username, target: universe.id });
+                if (member == null) {
+                    res.writeHead(403, { 'Content-Type': 'application/json' });
+                    res.end(sendResponse(false, null, "User is not member of this universe"));
+                    return;                    
+                }
+            } else {
+                const member = await membersCollection.findOne({ user: user.username, target: room.id });
+                if (member == null) {
+                    res.writeHead(403, { 'Content-Type': 'application/json' });
+                    res.end(sendResponse(false, null, "User is not member of this room"));
+                    return;                    
+                }
+            }
+            await transmitRoomUpdate(room.id, JSON.stringify({
+                type: "roomDelete",
+                roomId: room.id,
+                universeId: room.universeId,
+                protocol: PROT_NAME,
+                protocolVersion: PROT_VER
+            }))
+            const keyCollection = db.collection("roomKeys");
+            roomsCollection.updateOne({ id: room.id }, { $set: { deleted: true } })
+            if (room.universeId == "&0") {
+                keyCollection.deleteMany({ roomId: room.id });
+                membersCollection.deleteMany({ target: room.id });
+            }
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(sendResponse(true, {
+                roomId: room.id
+            }));
         })
     } else if (clearUrl == "/api/upload" && req.method == 'POST') {
         const collection = db.collection("users");
