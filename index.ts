@@ -557,7 +557,8 @@ const httpServer = http.createServer(async (req, res) => {
                     target: roomId,
                     nick: "",
                     role: "owner",
-                    joinedAt: new Date()
+                    joinedAt: new Date(),
+                    accepted: true
                 })
                 transmitToUser(user.username, JSON.stringify({
                     type: "roomCreated",
@@ -1213,7 +1214,8 @@ const httpServer = http.createServer(async (req, res) => {
                 target: room.id,
                 nick: "",
                 role: "member",
-                joinedAt: new Date()
+                joinedAt: new Date(),
+                accepted: false
             })
             const keyCollection = db.collection("roomKeys");
             keyCollection.insertOne({
@@ -1316,8 +1318,9 @@ const httpServer = http.createServer(async (req, res) => {
             rooms = []
             for (let i = 0; i < roomIds.length; i++) {
                 if (roomIds[i].target.startsWith("#")) {
-                    const room = await roomsCollection.findOne({ id: roomIds[i].target });
+                    let room = await roomsCollection.findOne({ id: roomIds[i].target });
                     if (room != null) {
+                        room.inviteAccepted = roomIds[i].accepted;
                         rooms.push(room);
                     }
                 }
@@ -1336,7 +1339,8 @@ const httpServer = http.createServer(async (req, res) => {
                 name: rooms[i].name,
                 owner: rooms[i].owner,
                 icon: rooms[i].icon,
-                createdAt: rooms[i].createdAt
+                createdAt: rooms[i].createdAt,
+                inviteAccepted: rooms[i].inviteAccepted || false,
             });
         }
         res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -1379,6 +1383,7 @@ const httpServer = http.createServer(async (req, res) => {
             return;
         }
         let members
+        let inviteAccepted = false;
         if (room.universeId != "&0") {
             const universesCollection = db.collection("universes");
             const universe = await universesCollection.findOne({ id: room.universeId });
@@ -1393,6 +1398,7 @@ const httpServer = http.createServer(async (req, res) => {
                 res.end(sendResponse(false, null, "User is not member of this universe"));
                 return;                    
             }
+            inviteAccepted = member.accepted;
             members = await membersCollection.find({ target: universe.id }).toArray();
         } else {
             const member = await membersCollection.findOne({ user: user.username, target: room.id });
@@ -1401,6 +1407,7 @@ const httpServer = http.createServer(async (req, res) => {
                 res.end(sendResponse(false, null, "User is not member of this room"));
                 return;                    
             }
+            inviteAccepted = member.accepted;
             members = await membersCollection.find({ target: room.id }).toArray();
         }
         let resMembers: any[] = [];
@@ -1423,7 +1430,8 @@ const httpServer = http.createServer(async (req, res) => {
             icon: room.icon,
             createdAt: room.createdAt,
             universeId: room.universeId,
-            members: resMembers
+            members: resMembers,
+            inviteAccepted: inviteAccepted
         }));
     } else if (clearUrl == "/api/universes" && req.method == 'GET') {
         if (req.headers["protocol"] != PROT_NAME) {
@@ -1455,8 +1463,9 @@ const httpServer = http.createServer(async (req, res) => {
         const universeIds = await membersCollection.find({ user: user.username }).toArray();
         for (let i = 0; i < universeIds.length; i++) {
             if (universeIds[i].target.startsWith("&")) {
-                const universe = await universesCollection.findOne({ id: universeIds[i].target });
+                let universe = await universesCollection.findOne({ id: universeIds[i].target });
                 if (universe != null) {
+                    universe.inviteAccepted = universeIds[i].accepted;
                     universes.push(universe);
                 }
             }
@@ -1474,7 +1483,8 @@ const httpServer = http.createServer(async (req, res) => {
                 name: universes[i].name,
                 owner: universes[i].owner,
                 icon: universes[i].icon,
-                createdAt: universes[i].createdAt
+                createdAt: universes[i].createdAt,
+                inviteAccepted: universes[i].inviteAccepted || false
             });
         }
         res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -1560,7 +1570,8 @@ const httpServer = http.createServer(async (req, res) => {
                 target: universeId,
                 nick: "",
                 role: "owner",
-                joinedAt: new Date()
+                joinedAt: new Date(),
+                accepted: true
             })
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(sendResponse(true, {
@@ -1661,7 +1672,8 @@ const httpServer = http.createServer(async (req, res) => {
                 target: universe.id,
                 nick: "",
                 role: "member",
-                joinedAt: new Date()
+                joinedAt: new Date(),
+                accepted: false
             })
             keyCollection.insertOne({
                 user: targetUser.username,
@@ -2428,6 +2440,7 @@ const httpServer = http.createServer(async (req, res) => {
             res.end(sendResponse(false, null, "User is not member of this universe"));
             return;
         }
+        let inviteAccepted = member.accepted
         let members = await membersCollection.find({ target: universe.id }).toArray();
         let resMembers: any[] = [];
         for (let i = 0; i < members.length; i++) {
@@ -2448,8 +2461,148 @@ const httpServer = http.createServer(async (req, res) => {
             owner: universe.owner,
             icon: universe.icon,
             createdAt: universe.createdAt,
-            members: resMembers
+            members: resMembers,
+            inviteAccepted: inviteAccepted,
         }));
+    } else if (clearUrl == "/api/acceptInvite" && req.method == 'POST') {
+        let body = '';
+        req.on('data', async (data) => {
+            body += data.toString();
+        })
+        req.on('end', async () => {
+            let parsedBody: any;
+            try {
+                parsedBody = JSON.parse(body);
+            } catch (e) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid JSON"));
+                return;
+            }
+            if (parsedBody.protocol != PROT_NAME) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Unknown protocol"));
+                return
+            }
+            if (parsedBody.protocolVersion != PROT_VER) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Unsupported protocol version"));
+                return;
+            }
+            if (parsedBody.token == undefined || typeof parsedBody.token != "string") {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid token"));
+                return;
+            }
+            if (parsedBody.targetId == undefined || typeof parsedBody.targetId != "string" || (!parsedBody.targetId.startsWith("&") && !parsedBody.targetId.startsWith("#"))) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid target ID"));
+                return;
+            }
+            const collection = db.collection("users");
+            const user = await collection.findOne({ token: parsedBody.token });
+            if (user == null) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid token"));
+                return;
+            }
+            if (user.suspended) {
+                res.writeHead(403, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "User is suspended"));
+                return;
+            }
+            collection.updateOne({ token: user.token }, { $set: { lastCommunication: new Date(), lastIP: ip } })
+            const membersCollection = db.collection("members");
+            const member = await membersCollection.findOne({ user: user.username, target: parsedBody.targetId });
+            if (member == null) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "You are not a member of this universe or room"));
+                return;
+            }
+            if (member.accepted) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "You have already accepted this invite"));
+                return;                
+            }
+            membersCollection.updateOne({ user: user.username, target: parsedBody.targetId }, { $set: { accepted: true } });
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(sendResponse(true, {
+                targetId: parsedBody.targetId,
+                accepted: true
+            }));
+        })
+    } else if (clearUrl == "/api/denyInvite" && req.method == 'POST') {
+        let body = '';
+        req.on('data', async (data) => {
+            body += data.toString();
+        })
+        req.on('end', async () => {
+            let parsedBody: any;
+            try {
+                parsedBody = JSON.parse(body);
+            } catch (e) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid JSON"));
+                return;
+            }
+            if (parsedBody.protocol != PROT_NAME) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Unknown protocol"));
+                return
+            }
+            if (parsedBody.protocolVersion != PROT_VER) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Unsupported protocol version"));
+                return;
+            }
+            if (parsedBody.token == undefined || typeof parsedBody.token != "string") {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid token"));
+                return;
+            }
+            if (parsedBody.targetId == undefined || typeof parsedBody.targetId != "string" || (!parsedBody.targetId.startsWith("&") && !parsedBody.targetId.startsWith("#"))) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid target ID"));
+                return;
+            }
+            const collection = db.collection("users");
+            const user = await collection.findOne({ token: parsedBody.token });
+            if (user == null) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid token"));
+                return;
+            }
+            if (user.suspended) {
+                res.writeHead(403, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "User is suspended"));
+                return;
+            }
+            collection.updateOne({ token: user.token }, { $set: { lastCommunication: new Date(), lastIP: ip } })
+            const membersCollection = db.collection("members");
+            const unvierseKeys = db.collection("universeKeys");
+            const roomKeys = db.collection("roomKeys");
+            const member = await membersCollection.findOne({ user: user.username, target: parsedBody.targetId });
+            if (member == null) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "You are not a member of this universe or room"));
+                return;
+            }
+            if (member.accepted) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "You have already accepted this invite"));
+                return;                
+            }
+            membersCollection.deleteOne({ user: user.username, target: parsedBody.targetId });
+            if (parsedBody.targetId.startsWith("&")) {
+                unvierseKeys.deleteOne({ universeId: parsedBody.targetId, user: user.username });
+            } else if (parsedBody.targetId.startsWith("#")) {
+                roomKeys.deleteOne({ roomId: parsedBody.targetId, user: user.username });
+            }
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(sendResponse(true, {
+                targetId: parsedBody.targetId,
+                accepted: false
+            }));
+        })
     } else {
         res.writeHead(404, { 'Content-Type': 'application/json' });
         res.end(sendResponse(false, null, "Not Found"));

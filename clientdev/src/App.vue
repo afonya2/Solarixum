@@ -60,6 +60,7 @@
     let channelSettings = ref(false)
     let universeSettings = ref(false)
     let ourRole = ref('member');
+    let inviteAccepted = ref(false);
 
     let channelKey: CryptoKey
     let channelIv: ArrayBuffer
@@ -135,6 +136,7 @@
             id: res.body.id,
             icon: res.body.icon != null ? '/uploads/'+encodeURIComponent(res.body.icon) : '../logo.svg',
         }
+        inviteAccepted.value = res.body.inviteAccepted || false;
 
         getMessages()
     }
@@ -1270,6 +1272,60 @@
     function notify(message: ToastMessageOptions) {
         toast.add(message)
     }
+    async function acceptInvite() {
+        let req = await fetch("/api/acceptInvite", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+                targetId: selectedUniverse.value == -1 ? rooms.value[selectedRoom.value].id : universes.value[selectedUniverse.value].id,
+                token: localStorage.getItem("token"),
+                protocol: PROT_NAME,
+                protocolVersion: PROT_VER,
+            })
+        });
+        let res = await req.json();
+        if (!res.ok) {
+            if (res.error === "Invalid token") {
+                localStorage.setItem("state", "1")
+                window.location.href = "";
+                return
+            }
+            toast.add({ severity: 'error', summary: 'Error', detail: res.error || "An unknown error occurred.", life: 3000 });
+            return;
+        }
+        console.log(res);
+        toast.add({ severity: 'success', summary: 'Success', detail: 'Invite accepted!', life: 3000 });
+        getRooms()
+    }
+    async function denyInvite() {
+        let req = await fetch("/api/denyInvite", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+                targetId: selectedUniverse.value == -1 ? rooms.value[selectedRoom.value].id : universes.value[selectedUniverse.value].id,
+                token: localStorage.getItem("token"),
+                protocol: PROT_NAME,
+                protocolVersion: PROT_VER,
+            })
+        });
+        let res = await req.json();
+        if (!res.ok) {
+            if (res.error === "Invalid token") {
+                localStorage.setItem("state", "1")
+                window.location.href = "";
+                return
+            }
+            toast.add({ severity: 'error', summary: 'Error', detail: res.error || "An unknown error occurred.", life: 3000 });
+            return;
+        }
+        console.log(res);
+        toast.add({ severity: 'success', summary: 'Success', detail: 'Invite denied!', life: 3000 });
+        getRooms()
+    }
     getUniverses()
     connectWs()
     getOwnInfo()
@@ -1345,12 +1401,21 @@
                 <RoomButton v-for="(room, i) in rooms" :label="room.label" :icon="room.icon" :active="room.active" @click="selectRoom(i)" :hidden="roomsLoading" loading="false" />
             </div>
             <div class="content-body">
-                <div class="messages overflow-auto">
+                <div class="messages overflow-auto" v-if="inviteAccepted || messagesLoading">
                     <ChatMessage v-for="_ in 10" v-if="messagesLoading" loading="true" />
                     <ChatMessage v-for="msg of messages" :username="msg.username" :icon="msg.icon" :message="msg.message" :timestamp="msg.timestamp" :id="msg.id" @edit-message="beginEditMessage(msg.id)" @delete-message="deleteMessage(msg.id)" @user-info="selectMember(msg.username)" :hidden="messagesLoading" loading="false" :ownusername="ownUser.username" :role="ourRole" />
                 </div>
+                <div class="messages overflow-auto" v-if="!inviteAccepted && !messagesLoading && roomInfo.name.length > 0">
+                    <div class="absolute top-1/2 left-1/2 -translate-1/2">
+                        <h3 class="text-2xl">You have been invited to '{{ selectedUniverse == -1 ? roomInfo.name : universeInfo.name }}'</h3>
+                        <div class="m-auto w-fit">
+                            <Button severity="danger" @click="denyInvite()">Deny invite</Button>
+                            <Button severity="success" class="ml-5" @click="acceptInvite()">Accept invite</Button>
+                        </div>
+                    </div>
+                </div>
                 <div class="message-input">
-                    <InputText type="text" placeholder="Send a message..." v-model="messageInput" class="w-full" @keypress.enter="sendMessage()" />
+                    <InputText type="text" placeholder="Send a message..." v-model="messageInput" class="w-full" @keypress.enter="sendMessage()" v-if="inviteAccepted" />
                 </div>
             </div>
         </div>
