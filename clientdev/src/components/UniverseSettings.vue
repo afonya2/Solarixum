@@ -2,7 +2,7 @@
     import { ref } from 'vue';
     import { InputText, FileUpload, Button, type FileUploadUploadEvent, type FileUploadBeforeSendEvent } from 'primevue';
 
-    let props = defineProps(["name", "icon", "id"]);
+    let props = defineProps(["name", "icon", "id", "role"]);
     let emits = defineEmits(["notify", "close"]);
     const PROT_NAME = 'Solarixum Protocol';
     const PROT_VER = '0.1.0';
@@ -119,8 +119,9 @@
         <FileUpload ref="fileupload" mode="basic" name="universeicon" url="/api/upload" accept="image/*" class="mb-2" @upload="onUpload" @before-send="beforeSend" />
         <InputText class="w-full" v-model="universeName" />
         <div class="flex items-center">
-            <Button class="float-end mt-2 block ml-auto" @click="deleteUniverse()" severity="danger">Delete</Button>
-            <Button class="float-end mt-2 block ml-2" @click="updateUniverse()">Update</Button>
+            <Button class="float-end mt-2 block ml-auto" @click="deleteUniverse()" severity="danger" v-if="props.role == 'owner'">Delete</Button>
+            <Button class="float-end mt-2 block ml-2" @click="updateUniverse()" v-if="props.role == 'owner'">Update</Button>
+            <Button class="float-end mt-2 block ml-auto" @click="updateUniverse()" v-if="props.role != 'owner'">Update</Button>
         </div>
     </div>
 </template>

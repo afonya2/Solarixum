@@ -1314,10 +1314,10 @@
             <Settings :username="ownUser.username" :icon="ownUser.icon" :bio="ownUser.bio" @notify="notify" />
         </Dialog>
         <Dialog v-model:visible="channelSettings" modal header="Channel settings" style="width: fit-content;">
-            <ChannelSettings :name="roomInfo.name" :icon="roomInfo.icon" :id="roomInfo.id" @notify="notify" @close="channelSettings = false" />
+            <ChannelSettings :name="roomInfo.name" :icon="roomInfo.icon" :id="roomInfo.id" @notify="notify" @close="channelSettings = false" :role="ourRole" :is-home="selectedUniverse == -1" />
         </Dialog>
         <Dialog v-model:visible="universeSettings" modal header="Universe settings" style="width: fit-content;">
-            <UniverseSettings :name="universeInfo.name" :icon="universeInfo.icon" :id="universeInfo.id" @notify="notify" @close="universeSettings = false" />
+            <UniverseSettings :name="universeInfo.name" :icon="universeInfo.icon" :id="universeInfo.id" @notify="notify" @close="universeSettings = false" :role="ourRole" />
         </Dialog>
         <div class="universe-select overflow-auto">
             <UniverseButton label="Home" icon="../logo.svg" :active="selectedUniverse == -1" @click="selectUniverse(-1)" />
@@ -1331,10 +1331,10 @@
         <div class="content">
             <div class="content-head">
                 <h2 class="text-2xl">{{ selectedUniverse < universes.length ? (selectedUniverse == -1 ? "Home" : universes[selectedUniverse].label) : "Loading..." }}</h2>
-                <Button class="btn ml-5" @click="universeSettings = true" v-if="selectedUniverse != -1"><span class="material-symbols-rounded align-middle text-slate-300">settings</span></Button>
+                <Button class="btn ml-5" @click="universeSettings = true" v-if="(selectedUniverse != -1) && (ourRole == 'owner' || ourRole == 'admin')"><span class="material-symbols-rounded align-middle text-slate-300">settings</span></Button>
                 <Button class="btn ml-auto" @click="inviteModal = true" v-if="rooms.length > selectedRoom"><span class="material-symbols-rounded align-middle text-slate-300">person_add</span></Button>
                 <Button class="btn" @click="showMembers = true" v-if="rooms.length > selectedRoom"><span class="material-symbols-rounded align-middle text-slate-300">group</span></Button>
-                <Button class="btn" @click="channelSettings = true" v-if="rooms.length > selectedRoom"><span class="material-symbols-rounded align-middle text-slate-300">settings</span></Button>
+                <Button class="btn" @click="channelSettings = true" v-if="rooms.length > selectedRoom && (ourRole=='owner' || ourRole == 'admin')"><span class="material-symbols-rounded align-middle text-slate-300">settings</span></Button>
             </div>
             <div class="room-select overflow-auto">
                 <div class="flex items-center mb-4">
