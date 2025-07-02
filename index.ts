@@ -414,12 +414,12 @@ const httpServer = http.createServer(async (req, res) => {
                         key: base64ToPem(parsedBody.publicKey),
                         padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
                         oaepHash: 'sha256'
-                    }, Buffer.from(config.welcomeRoomKey)).toString("base64");
+                    }, Buffer.from(config.welcomeRoomKey, 'base64')).toString("base64");
                     let encryptedIv = crypto.publicEncrypt({
                         key: base64ToPem(parsedBody.publicKey),
                         padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
                         oaepHash: 'sha256'
-                    }, Buffer.from(config.welcomeRoomIv)).toString("base64");
+                    }, Buffer.from(config.welcomeRoomIv, 'base64')).toString("base64");
                     membersCollection.insertOne({
                         user: "@"+parsedBody.username,
                         target: room.id,

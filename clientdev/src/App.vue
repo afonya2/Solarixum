@@ -304,6 +304,7 @@
                 privateKey,
                 utils.base64ToArray(res1.body.iv)
             );
+            //console.log(utils.dataToBase64(decryptedKey), utils.dataToBase64(decryptedIv)); You can access the decrypted key and iv here (if you want to create a welcome room)
             keyBuffer = await crypto.subtle.importKey("raw", decryptedKey, { name: "AES-CBC" }, false, [
                 "encrypt",
                 "decrypt",
