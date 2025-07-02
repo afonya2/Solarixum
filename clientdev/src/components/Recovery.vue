@@ -22,12 +22,19 @@
         resethidden.value = false;
         mainhidden.value = true;
     }
+    async function logout() {
+        localStorage.removeItem("token");
+        localStorage.removeItem("state");
+        localStorage.removeItem("passwordKey");
+        window.location.href = "";
+    }
 </script>
 
 <template>
     <div class="bg">
         <main class="w-full h-full md:w-50px">
             <h1 class="text-4xl">Solarixum Account recovery</h1>
+            <p>Don't want to? <a href="#" @click="logout()">Log out</a></p>
             <div class="flex flex-col gap-2" :hidden="mainhidden">
                 <p>Please select one of the recovery methods:</p>
                 <Card @click="useRecoveryWord()">

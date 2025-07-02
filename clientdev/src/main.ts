@@ -8,6 +8,7 @@ import Login from './components/Login.vue';
 import Recovery from './components/Recovery.vue';
 import Register from './components/Register.vue';
 import { ToastService } from 'primevue';
+import Terms from './components/Terms.vue';
 
 const Preset = definePreset(Aura, {
     semantic: {
@@ -42,13 +43,17 @@ const Preset = definePreset(Aura, {
 
 let app = createApp(Login);
 let state = localStorage.getItem('state');
-if (state == "5") {
-    app = createApp(App);
-    app.use(ToastService)
-} else if (state == "3") {
-    app = createApp(Recovery)
-} else if (state == "2") {
-    app = createApp(Register);
+if (window.location.pathname.includes('/terms')) {
+    app = createApp(Terms);
+} else {
+    if (state == "5") {
+        app = createApp(App);
+        app.use(ToastService)
+    } else if (state == "3") {
+        app = createApp(Recovery)
+    } else if (state == "2") {
+        app = createApp(Register);
+    }
 }
 
 app.use(PrimeVue, {

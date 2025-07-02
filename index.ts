@@ -13,7 +13,41 @@ const VER = '0.1.0';
 const SERV_NAME = 'Solarixum Server';
 const PROT_VER = '0.1.0';
 const PROT_NAME = 'Solarixum Protocol';
-const config = JSON.parse(fs.readFileSync('config.json', 'utf8'));
+let limits = {}
+let config = {
+    "port": 1010,
+    "db": {
+        "host": "127.0.0.1",
+        "port": 27017,
+        "database": "solarixum",
+        "user": "solarixum",
+        "password": "solarixum"
+    },
+    "trustedProxies": ["127.0.0.1"],
+    "limits": {
+        "maxFileSize": 10485760,
+        "maxRequestsPerHour": 10000,
+        "maxRegistrationsPerHour": 2,
+        "loginTriesPerHour": 10
+    },
+    "welcomeRoom": "",
+    "welcomeRoomKey": "",
+    "welcomeRoomIv": ""
+}
+const configFile = JSON.parse(fs.readFileSync('config.json', 'utf8'));
+function merge(target: any, source: any, deep: boolean) {
+    for (const key in source) {
+        if (source.hasOwnProperty(key)) {
+            if (deep && typeof source[key] === 'object' && source[key] !== null && !Array.isArray(source[key]) && target[key] !== undefined) {
+                merge(target[key], source[key], deep);
+            } else {
+                target[key] = source[key];
+            }
+        }
+    }
+}
+merge(config, configFile, true);
+
 
 const dbClient = new MongoClient(`mongodb://${encodeURIComponent(config.db.user)}:${encodeURIComponent(config.db.password)}@${config.db.host}:${config.db.port}/`, {
     tls: true,
@@ -45,6 +79,15 @@ function generateRandomString(length: number): string {
 function base64ToPem(base64: string): string {
     const lines = base64.match(/.{1,64}/g)?.join('\n') || '';
     return `-----BEGIN PUBLIC KEY-----\n${lines}\n-----END PUBLIC KEY-----`;
+}
+function characterLimit(input: string): boolean {
+    let allowedChars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_.-";
+    for (let i = 0; i < input.length; i++) {
+        if (!allowedChars.includes(input[i])) {
+            return false;
+        }
+    }
+    return true;
 }
 
 let sockets: {[key: string]: { ws: WebSocket, token: string, username: string, lastHeartBeat: number }} = {}
@@ -107,8 +150,39 @@ const httpServer = http.createServer(async (req, res) => {
     if (ip == "::1") {
         ip = "127.0.0.1"
     }
+    if (ip == undefined) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(sendResponse(false, null, "Failed to determine your IP address. Please try again later."));
+        return
+    }
     if (req.headers['x-forwarded-for'] != undefined && config.trustedProxies.includes(ip)) {
         ip = req.headers['x-forwarded-for'] as string;
+    }
+    if (ip == undefined) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(sendResponse(false, null, "Failed to determine your IP address. Please try again later."));
+        return
+    }
+    if (limits[ip] == undefined || limits[ip].reset < Date.now()) {
+        limits[ip] = {
+            count: 0,
+            registers: 0,
+            logins: 0,
+            reset: Date.now() + 3600000
+        }
+    }
+    limits[ip].count++;
+    if (limits[ip].count > config.limits.maxRequestsPerHour) {
+        res.writeHead(429, { 'Content-Type': 'application/json' });
+        res.end(sendResponse(false, {
+            resetDate: limits[ip].reset
+        }, "Too many requests. Please try again later."));
+        return;
+    }
+    if (clearUrl == "/") {
+        res.writeHead(301, { 'Location': '/client/' });
+        res.end();
+        return;
     }
     if (clearUrl == "/version" && req.method === 'GET') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -125,6 +199,9 @@ const httpServer = http.createServer(async (req, res) => {
         let pathRemaining = clearUrl.replace("/client/", "");
         let file = `./client/${path.normalize(pathRemaining)}`;
         if (file == "./client/.") {
+            file = "./client/index.html";
+        }
+        if (file == "./client/terms") {
             file = "./client/index.html";
         }
         if (!fs.existsSync(file)) {
@@ -215,6 +292,20 @@ const httpServer = http.createServer(async (req, res) => {
             res.writeHead(200, { 'Content-Type': 'text/text', 'cache-control': 'max-age=86400' });
             res.end(content);
         }
+    } else if (clearUrl == "/api/info" && req.method === 'GET') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(sendResponse(true, {
+            protocol: PROT_NAME,
+            protocolVersion: PROT_VER,
+            serverVersion: VER,
+            serverName: SERV_NAME,
+            limits: {
+                maxFileSize: config.limits.maxFileSize,
+                maxRequestsPerHour: config.limits.maxRequestsPerHour,
+                maxRegistrationsPerHour: config.limits.maxRegistrationsPerHour,
+                loginTriesPerHour: config.limits.loginTriesPerHour
+            }
+        }))
     } else if (clearUrl == "/api/register" && req.method === 'POST') {
         let body = '';
         req.on('data', async (data) => {
@@ -239,7 +330,7 @@ const httpServer = http.createServer(async (req, res) => {
                 res.end(sendResponse(false, null, "Unsupported protocol version"));
                 return;
             }
-            if (parsedBody.username == undefined || typeof parsedBody.username != "string" || parsedBody.username.length < 5 || parsedBody.username.length > 32) {
+            if (parsedBody.username == undefined || typeof parsedBody.username != "string" || parsedBody.username.length < 5 || parsedBody.username.length > 32 || !characterLimit(parsedBody.username)) {
                 res.writeHead(400, { 'Content-Type': 'application/json' });
                 res.end(sendResponse(false, null, "Invalid username"));
                 return;
@@ -257,6 +348,14 @@ const httpServer = http.createServer(async (req, res) => {
             if (parsedBody.publicKey == undefined || typeof parsedBody.publicKey != "string") {
                 res.writeHead(400, { 'Content-Type': 'application/json' });
                 res.end(sendResponse(false, null, "Invalid public key"));
+                return;
+            }
+            limits[ip].registers++;
+            if (limits[ip].registers > config.limits.maxRegistrationsPerHour) {
+                res.writeHead(429, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, {
+                    resetDate: limits[ip].reset
+                }, "Too many registrations. Please try again later."));
                 return;
             }
             const collection = db.collection("users");
@@ -295,6 +394,49 @@ const httpServer = http.createServer(async (req, res) => {
                 token: token,
                 suspended: false
             })
+            if (config.welcomeRoom != undefined && config.welcomeRoomKey != undefined && config.welcomeRoomIv != undefined && config.welcomeRoom.length > 0 && config.welcomeRoomKey.length > 0 && config.welcomeRoomIv.length > 0) {
+                const roomCollection = db.collection("rooms");
+                const membersCollection = db.collection("members");
+                const keyCollection = db.collection("roomKeys");
+                const room = await roomCollection.findOne({ id: config.welcomeRoom });
+                if (room == null || room.deleted) {
+                    res.writeHead(200, { 'Content-Type': 'application/json' });
+                    res.end(sendResponse(true, {
+                        username: parsedBody.username,
+                        token: token
+                    }));
+                    return
+                }
+                try {
+                    let encryptedKey = crypto.publicEncrypt({
+                        key: base64ToPem(parsedBody.publicKey),
+                        padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
+                        oaepHash: 'sha256'
+                    }, Buffer.from(config.welcomeRoomKey)).toString("base64");
+                    let encryptedIv = crypto.publicEncrypt({
+                        key: base64ToPem(parsedBody.publicKey),
+                        padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
+                        oaepHash: 'sha256'
+                    }, Buffer.from(config.welcomeRoomIv)).toString("base64");
+                    membersCollection.insertOne({
+                        user: "@"+parsedBody.username,
+                        target: room.id,
+                        nick: "",
+                        role: "member",
+                        joinedAt: new Date(),
+                        accepted: false
+                    })
+                    keyCollection.insertOne({
+                        user: "@"+parsedBody.username,
+                        roomId: room.id,
+                        key: encryptedKey,
+                        iv: encryptedIv,
+                        createdAt: new Date()
+                    })
+                } catch (e) {
+                    console.error(`Failed to invite: ${'@'+parsedBody.username} to the welcome room! Error: ${e}`);
+                }
+            }
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(sendResponse(true, {
                 username: parsedBody.username,
@@ -398,6 +540,14 @@ const httpServer = http.createServer(async (req, res) => {
                 res.end(sendResponse(false, null, "Invalid password"));
                 return;
             }
+            limits[ip].logins++;
+            if (limits[ip].logins > config.limits.loginTriesPerHour) {
+                res.writeHead(429, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, {
+                    resetDate: limits[ip].reset
+                }, "Too many login attempts. Please try again later."));
+                return;
+            }
             const collection = db.collection("users");
             const hashedPassword = crypto.createHash('sha256').update(parsedBody.password).digest('hex');
             const user = await collection.findOne({ username: "@"+parsedBody.username, password: hashedPassword });
@@ -461,7 +611,7 @@ const httpServer = http.createServer(async (req, res) => {
                 res.end(sendResponse(false, null, "Invalid token"));
                 return;
             }
-            if (parsedBody.roomName == undefined || typeof parsedBody.roomName != "string" || parsedBody.roomName.length < 3 || parsedBody.roomName.length > 32) {
+            if (parsedBody.roomName == undefined || typeof parsedBody.roomName != "string" || parsedBody.roomName.length < 3 || parsedBody.roomName.length > 32 || !characterLimit(parsedBody.roomName)) {
                 res.writeHead(400, { 'Content-Type': 'application/json' });
                 res.end(sendResponse(false, null, "Invalid room name"));
                 return;
@@ -1518,7 +1668,7 @@ const httpServer = http.createServer(async (req, res) => {
                 res.end(sendResponse(false, null, "Invalid token"));
                 return;
             }
-            if (parsedBody.universeName == undefined || typeof parsedBody.universeName != "string" || parsedBody.universeName.length < 3 || parsedBody.universeName.length > 32) {
+            if (parsedBody.universeName == undefined || typeof parsedBody.universeName != "string" || parsedBody.universeName.length < 3 || parsedBody.universeName.length > 32 || !characterLimit(parsedBody.universeName)) {
                 res.writeHead(400, { 'Content-Type': 'application/json' });
                 res.end(sendResponse(false, null, "Invalid universe name"));
                 return;
@@ -1928,7 +2078,7 @@ const httpServer = http.createServer(async (req, res) => {
                 res.end(sendResponse(false, null, "Invalid room ID"));
                 return;
             }
-            if (parsedBody.roomName == undefined || typeof parsedBody.roomName != "string" || parsedBody.roomName.length < 3 || parsedBody.roomName.length > 32) {
+            if (parsedBody.roomName == undefined || typeof parsedBody.roomName != "string" || parsedBody.roomName.length < 3 || parsedBody.roomName.length > 32 || !characterLimit(parsedBody.roomName)) {
                 res.writeHead(400, { 'Content-Type': 'application/json' });
                 res.end(sendResponse(false, null, "Invalid room name"));
                 return;
@@ -2146,7 +2296,7 @@ const httpServer = http.createServer(async (req, res) => {
                 res.end(sendResponse(false, null, "Invalid universe ID"));
                 return;
             }
-            if (parsedBody.universeName == undefined || typeof parsedBody.universeName != "string" || parsedBody.universeName.length < 3 || parsedBody.universeName.length > 32) {
+            if (parsedBody.universeName == undefined || typeof parsedBody.universeName != "string" || parsedBody.universeName.length < 3 || parsedBody.universeName.length > 32 || !characterLimit(parsedBody.universeName)) {
                 res.writeHead(400, { 'Content-Type': 'application/json' });
                 res.end(sendResponse(false, null, "Invalid universe name"));
                 return;
