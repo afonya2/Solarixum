@@ -45,7 +45,8 @@ An end-to-end encrypted chat platform.
     "welcomeRoomIv": ""     // Optional: Decrypted IV for the welcome room
 }
 ```
-4. Start the server using `npm start`.
+4. Install the dependencies using `npm install`.
+5. Start the server using `npm start`.
 
 ### Found a Bug?
 - Report it by creating an issue.
