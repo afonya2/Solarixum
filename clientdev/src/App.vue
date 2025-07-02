@@ -1258,7 +1258,7 @@
         }
         console.log(res);
         toast.add({ severity: 'success', summary: 'Success', detail: 'Invite accepted!', life: 3000 });
-        getRooms()
+        getUniverses()
     }
     async function denyInvite() {
         let req = await fetch("/api/denyInvite", {
@@ -1285,7 +1285,7 @@
         }
         console.log(res);
         toast.add({ severity: 'success', summary: 'Success', detail: 'Invite denied!', life: 3000 });
-        getRooms()
+        getUniverses()
     }
     getUniverses()
     connectWs()

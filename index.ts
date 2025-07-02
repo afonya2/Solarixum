@@ -1476,6 +1476,12 @@ const httpServer = http.createServer(async (req, res) => {
                 res.end(sendResponse(false, null, "Invalid universe ID"));
                 return;
             }
+            const member = await membersCollection.findOne({ user: user.username, target: decodeURIComponent(args.universeId) });
+            if (member == null) {
+                res.writeHead(403, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "User is not member of this universe"));
+                return;                    
+            }
             rooms = await roomsCollection.find({ universeId: decodeURIComponent(args.universeId) }).toArray();
         } else {
             const roomIds = await membersCollection.find({ user: user.username }).toArray();
