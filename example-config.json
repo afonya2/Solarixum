@@ -1,0 +1,20 @@
+{
+    "port": 1010,
+    "db": {
+        "host": "127.0.0.1",
+        "port": 27017,
+        "database": "solarixum",
+        "user": "solarixum",
+        "password": "solarixum"
+    },
+    "trustedProxies": ["127.0.0.1"],
+    "limits": {
+        "maxFileSize": 10485760,
+        "maxRequestsPerHour": 10000,
+        "maxRegistrationsPerHour": 2,
+        "loginTriesPerHour": 10
+    },
+    "welcomeRoom": "",
+    "welcomeRoomKey": "",
+    "welcomeRoomIv": ""
+}
