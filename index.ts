@@ -47,7 +47,9 @@ function merge(target: any, source: any, deep: boolean) {
     }
 }
 merge(config, configFile, true);
-
+if (!fs.existsSync("uploads")) {
+    fs.mkdirSync("uploads");
+}
 
 const dbClient = new MongoClient(`mongodb://${encodeURIComponent(config.db.user)}:${encodeURIComponent(config.db.password)}@${config.db.host}:${config.db.port}/`, {
     tls: true,
