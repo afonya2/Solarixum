@@ -38,7 +38,8 @@ An end-to-end encrypted chat platform.
         "maxFileSize": 10485760,           // Maximum upload size for files (in bytes)
         "maxRequestsPerHour": 10000,       // Maximum number of requests allowed per IP per hour
         "maxRegistrationsPerHour": 2,      // Maximum number of registrations allowed per IP per hour
-        "loginTriesPerHour": 10            // Maximum number of login attempts per IP per hour
+        "loginTriesPerHour": 10,           // Maximum number of login attempts per IP per hour
+        "messagesPerHour": 1000            // Maximum number of messages per IP per hour
     },
     "welcomeRoom": "",      // Optional: ID of the room to auto-add users upon registration
     "welcomeRoomKey": "",   // Optional: Decrypted encryption key for the welcome room

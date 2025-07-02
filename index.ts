@@ -28,7 +28,8 @@ let config = {
         "maxFileSize": 10485760,
         "maxRequestsPerHour": 10000,
         "maxRegistrationsPerHour": 2,
-        "loginTriesPerHour": 10
+        "loginTriesPerHour": 10,
+        "messagesPerHour": 1000
     },
     "welcomeRoom": "",
     "welcomeRoomKey": "",
@@ -170,6 +171,7 @@ const httpServer = http.createServer(async (req, res) => {
             count: 0,
             registers: 0,
             logins: 0,
+            messages: 0,
             reset: Date.now() + 3600000
         }
     }
@@ -846,6 +848,13 @@ const httpServer = http.createServer(async (req, res) => {
             if (parsedBody.message == undefined || typeof parsedBody.message != "string") {
                 res.writeHead(400, { 'Content-Type': 'application/json' });
                 res.end(sendResponse(false, null, "Invalid message"));
+                return;
+            }
+            if (limits[ip].messages > config.limits.messagesPerHour) {
+                res.writeHead(429, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, {
+                    resetDate: limits[ip].reset
+                }, "Please don't spam."));
                 return;
             }
             const collection = db.collection("users");
@@ -2121,9 +2130,9 @@ const httpServer = http.createServer(async (req, res) => {
                 if (member == null) {
                     res.writeHead(403, { 'Content-Type': 'application/json' });
                     res.end(sendResponse(false, null, "User is not member of this universe"));
-                    return;                    
+                    return;
                 }
-                if (member.role != "owner" || member.role != "admin") {
+                if (member.role != "owner" && member.role != "admin") {
                     res.writeHead(403, { 'Content-Type': 'application/json' });
                     res.end(sendResponse(false, null, "Permission denied"));
                     return;

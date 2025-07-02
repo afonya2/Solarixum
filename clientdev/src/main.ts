@@ -51,6 +51,7 @@ if (window.location.pathname.includes('/terms')) {
     if (state == "5") {
         app = createApp(App);
         app.use(ToastService)
+        document.title = "Solarixum - Home";
     } else if (state == "3") {
         app = createApp(Recovery)
         document.title = "Solarixum - Recovery";

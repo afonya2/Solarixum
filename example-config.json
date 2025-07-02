@@ -12,7 +12,8 @@
         "maxFileSize": 10485760,
         "maxRequestsPerHour": 10000,
         "maxRegistrationsPerHour": 2,
-        "loginTriesPerHour": 10
+        "loginTriesPerHour": 10,
+        "messagesPerHour": 1000
     },
     "welcomeRoom": "",
     "welcomeRoomKey": "",
