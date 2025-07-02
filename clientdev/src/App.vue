@@ -1001,7 +1001,8 @@
             window.location.href = "";
             return;
         }
-        socket = new WebSocket(`ws://${window.location.host}/ws`);
+        let prot = window.location.protocol == "https:" ? "wss" : "ws";
+        socket = new WebSocket(`${prot}://${window.location.host}/ws`);
         socket.onopen = () => {
             console.log("WebSocket connection established");
             socket.send(JSON.stringify({

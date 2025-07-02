@@ -148,7 +148,7 @@ setInterval(() => {
 const httpServer = http.createServer(async (req, res) => {
     const clearUrl = req.url?.split('?')[0];
     const args = url.parse(req.url || "", true).query;
-    let ip = req.socket.remoteAddress
+    let ip = req.socket.remoteAddress?.replace("::ffff:", "")
     if (ip == "::1") {
         ip = "127.0.0.1"
     }
@@ -197,6 +197,9 @@ const httpServer = http.createServer(async (req, res) => {
     } else if (clearUrl == "/client") {
         res.writeHead(301, { 'Location': '/client/' });
         res.end();
+    } else if (clearUrl == "/logo.svg") {
+        res.writeHead(200, { 'Content-Type': 'image/svg+xml', 'cache-control': 'max-age=86400' });
+        res.end(fs.readFileSync("./client/logo.svg"));
     } else if (clearUrl?.startsWith("/client/")) {
         let pathRemaining = clearUrl.replace("/client/", "");
         let file = `./client/${path.normalize(pathRemaining)}`;
