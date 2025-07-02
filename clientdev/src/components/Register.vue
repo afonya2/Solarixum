@@ -107,7 +107,7 @@
                 <InputText type="text" name="username" placeholder="Username" style="margin-block: 5px;" v-model="username" />
                 <label for="password">Password</label>
                 <InputText type="password" name="password" placeholder="Password" style="margin-block: 5px;" v-model="password" />
-                <p>You accept the Terms of service and the Privacy policy by pressing the button below.</p>
+                <p>You accept the <a href="/client/terms" target="_blank">Terms of service and the Privacy policy</a> by pressing the button below.</p>
                 <Button style="float: right;margin-top: 5px;" @click="register()">Register</Button>
                 <p>Already have an account? <a href="#" @click="toLogin()">Log in</a></p>
             </div>

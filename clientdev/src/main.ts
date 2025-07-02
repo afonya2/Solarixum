@@ -42,17 +42,21 @@ const Preset = definePreset(Aura, {
 });
 
 let app = createApp(Login);
+document.title = "Solarixum - Login";
 let state = localStorage.getItem('state');
 if (window.location.pathname.includes('/terms')) {
     app = createApp(Terms);
+    document.title = "Solarixum - Terms of Service";
 } else {
     if (state == "5") {
         app = createApp(App);
         app.use(ToastService)
     } else if (state == "3") {
         app = createApp(Recovery)
+        document.title = "Solarixum - Recovery";
     } else if (state == "2") {
         app = createApp(Register);
+        document.title = "Solarixum - Register";
     }
 }
 
