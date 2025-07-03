@@ -3,7 +3,7 @@ import { WebSocketServer } from 'ws';
 import crypto from 'crypto';
 import url from 'url'
 import fs from 'fs';
-import path from 'path';
+import path, { parse } from 'path';
 import { MongoClient } from 'mongodb'
 import { ulid } from 'ulid';
 import WebSocket from 'ws';
@@ -2772,6 +2772,553 @@ const httpServer = http.createServer(async (req, res) => {
                 targetId: parsedBody.targetId,
                 accepted: false
             }));
+        })
+    } else if (clearUrl == "/api/room/leave" && req.method == 'POST') {
+        let body = '';
+        req.on('data', async (data) => {
+            body += data.toString();
+        })
+        req.on('end', async () => {
+            let parsedBody: any;
+            try {
+                parsedBody = JSON.parse(body);
+            } catch (e) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid JSON"));
+                return;
+            }
+            if (parsedBody.protocol != PROT_NAME) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Unknown protocol"));
+                return
+            }
+            if (parsedBody.protocolVersion != PROT_VER) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Unsupported protocol version"));
+                return;
+            }
+            if (parsedBody.token == undefined || typeof parsedBody.token != "string") {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid token"));
+                return;
+            }
+            if (parsedBody.roomId == undefined || typeof parsedBody.roomId != "string" || !parsedBody.roomId.startsWith("#")) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid room ID"));
+                return;
+            }
+            const collection = db.collection("users");
+            const user = await collection.findOne({ token: parsedBody.token });
+            if (user == null) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid token"));
+                return;
+            }
+            if (user.suspended) {
+                res.writeHead(403, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "User is suspended"));
+                return;
+            }
+            collection.updateOne({ token: user.token }, { $set: { lastCommunication: new Date(), lastIP: ip } })
+            const membersCollection = db.collection("members");
+            const roomsCollection = db.collection("rooms");
+            const room = await roomsCollection.findOne({ id: parsedBody.roomId });
+            if (room == null || room.deleted) {
+                res.writeHead(404, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Room not found"));
+                return;
+            }
+            if (room.universeId != "&0") {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "You cannot leave a room in a universe, use /api/universe/leave instead"));
+                return;
+            }
+            const roomKeys = db.collection("roomKeys");
+            const member = await membersCollection.findOne({ user: user.username, target: parsedBody.roomId });
+            if (member == null || !member.accepted) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "You are not a member of this room"));
+                return;
+            }
+            if (member.role == "owner") {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "You cannot leave a room you own, use /api/room/delete instead"));
+                return;
+            }
+            membersCollection.deleteOne({ user: user.username, target: parsedBody.roomId });
+            roomKeys.deleteOne({ user: user.username, roomId: parsedBody.roomId });
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(sendResponse(true, {
+                roomId: parsedBody.roomId,
+            }));
+        })
+    } else if (clearUrl == "/api/universe/leave" && req.method == 'POST') {
+        let body = '';
+        req.on('data', async (data) => {
+            body += data.toString();
+        })
+        req.on('end', async () => {
+            let parsedBody: any;
+            try {
+                parsedBody = JSON.parse(body);
+            } catch (e) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid JSON"));
+                return;
+            }
+            if (parsedBody.protocol != PROT_NAME) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Unknown protocol"));
+                return
+            }
+            if (parsedBody.protocolVersion != PROT_VER) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Unsupported protocol version"));
+                return;
+            }
+            if (parsedBody.token == undefined || typeof parsedBody.token != "string") {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid token"));
+                return;
+            }
+            if (parsedBody.universeId == undefined || typeof parsedBody.universeId != "string" || !parsedBody.universeId.startsWith("&")) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid universe ID"));
+                return;
+            }
+            const collection = db.collection("users");
+            const user = await collection.findOne({ token: parsedBody.token });
+            if (user == null) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid token"));
+                return;
+            }
+            if (user.suspended) {
+                res.writeHead(403, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "User is suspended"));
+                return;
+            }
+            collection.updateOne({ token: user.token }, { $set: { lastCommunication: new Date(), lastIP: ip } })
+            const membersCollection = db.collection("members");
+            const universesCollection = db.collection("universes");
+            const universe = await universesCollection.findOne({ id: parsedBody.universeId });
+            if (universe == null || universe.deleted) {
+                res.writeHead(404, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Universe not found"));
+                return;
+            }
+            const universeKeys = db.collection("universeKeys");
+            const member = await membersCollection.findOne({ user: user.username, target: parsedBody.universeId });
+            if (member == null || !member.accepted) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "You are not a member of this universe"));
+                return;
+            }
+            if (member.role == "owner") {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "You cannot leave a universe you own, use /api/universe/delete instead"));
+                return;
+            }
+            membersCollection.deleteOne({ user: user.username, target: parsedBody.universeId });
+            universeKeys.deleteOne({ user: user.username, universeId: parsedBody.universeId });
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(sendResponse(true, {
+                universeId: parsedBody.universeId,
+            }));
+        })
+    } else if (clearUrl == "/api/room/setRank" && req.method == 'POST') {
+        let body = '';
+        req.on('data', async (data) => {
+            body += data.toString();
+        })
+        req.on('end', async () => {
+            let parsedBody: any;
+            try {
+                parsedBody = JSON.parse(body);
+            } catch (e) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid JSON"));
+                return;
+            }
+            if (parsedBody.protocol != PROT_NAME) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Unknown protocol"));
+                return
+            }
+            if (parsedBody.protocolVersion != PROT_VER) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Unsupported protocol version"));
+                return;
+            }
+            if (parsedBody.token == undefined || typeof parsedBody.token != "string") {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid token"));
+                return;
+            }
+            if (parsedBody.roomId == undefined || typeof parsedBody.roomId != "string" || !parsedBody.roomId.startsWith("#")) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid room ID"));
+                return;
+            }
+            if (parsedBody.target == undefined || typeof parsedBody.target != "string" || !parsedBody.target.startsWith("@")) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid target ID"));
+                return;
+            }
+            if (parsedBody.rank == undefined || typeof parsedBody.rank != "string" || !["member", "moderator", "admin"].includes(parsedBody.rank)) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid rank"));
+                return;
+            }
+            const collection = db.collection("users");
+            const user = await collection.findOne({ token: parsedBody.token });
+            if (user == null) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid token"));
+                return;
+            }
+            if (user.suspended) {
+                res.writeHead(403, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "User is suspended"));
+                return;
+            }
+            collection.updateOne({ token: user.token }, { $set: { lastCommunication: new Date(), lastIP: ip } })
+            const membersCollection = db.collection("members");
+            const roomsCollection = db.collection("rooms");
+            const room = await roomsCollection.findOne({ id: parsedBody.roomId });
+            if (room == null || room.deleted) {
+                res.writeHead(404, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Room not found"));
+                return;
+            }
+            if (room.universeId != "&0") {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "You cannot set rank in a room in a universe, use /api/universe/setRank instead"));
+                return;
+            }
+            const member = await membersCollection.findOne({ user: user.username, target: parsedBody.roomId });
+            if (member == null || !member.accepted) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "You are not a member of this room"));
+                return;
+            }
+            if (member.role != "owner" && member.role != "admin") {
+                res.writeHead(403, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Permission denied"));
+                return;
+            }
+            const targetMember = await membersCollection.findOne({ user: parsedBody.target, target: parsedBody.roomId });
+            if (targetMember == null) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Target user is not a member of this room"));
+                return;
+            }
+            if (targetMember.role == "owner") {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "You cannot change the rank of the room owner"));
+                return;
+            }
+            membersCollection.updateOne({ user: parsedBody.target, target: parsedBody.roomId }, { $set: { role: parsedBody.rank } });
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(sendResponse(true, {
+                roomId: parsedBody.roomId,
+                target: parsedBody.target,
+                rank: parsedBody.rank
+            }));
+        })
+    } else if (clearUrl == "/api/universe/setRank" && req.method == 'POST') {
+        let body = '';
+        req.on('data', async (data) => {
+            body += data.toString();
+        })
+        req.on('end', async () => {
+            let parsedBody: any;
+            try {
+                parsedBody = JSON.parse(body);
+            } catch (e) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid JSON"));
+                return;
+            }
+            if (parsedBody.protocol != PROT_NAME) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Unknown protocol"));
+                return
+            }
+            if (parsedBody.protocolVersion != PROT_VER) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Unsupported protocol version"));
+                return;
+            }
+            if (parsedBody.token == undefined || typeof parsedBody.token != "string") {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid token"));
+                return;
+            }
+            if (parsedBody.universeId == undefined || typeof parsedBody.universeId != "string" || !parsedBody.universeId.startsWith("&")) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid universe ID"));
+                return;
+            }
+            if (parsedBody.target == undefined || typeof parsedBody.target != "string" || !parsedBody.target.startsWith("@")) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid target ID"));
+                return;
+            }
+            if (parsedBody.rank == undefined || typeof parsedBody.rank != "string" || !["member", "moderator", "admin"].includes(parsedBody.rank)) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid rank"));
+                return;
+            }
+            const collection = db.collection("users");
+            const user = await collection.findOne({ token: parsedBody.token });
+            if (user == null) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid token"));
+                return;
+            }
+            if (user.suspended) {
+                res.writeHead(403, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "User is suspended"));
+                return;
+            }
+            collection.updateOne({ token: user.token }, { $set: { lastCommunication: new Date(), lastIP: ip } })
+            const membersCollection = db.collection("members");
+            const universesCollection = db.collection("universes");
+            const universe = await universesCollection.findOne({ id: parsedBody.universeId });
+            if (universe == null || universe.deleted) {
+                res.writeHead(404, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Universe not found"));
+                return;
+            }
+            const member = await membersCollection.findOne({ user: user.username, target: parsedBody.universeId });
+            if (member == null || !member.accepted) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "You are not a member of this universe"));
+                return;
+            }
+            if (member.role != "owner" && member.role != "admin") {
+                res.writeHead(403, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Permission denied"));
+                return;
+            }
+            const targetMember = await membersCollection.findOne({ user: parsedBody.target, target: parsedBody.universeId });
+            if (targetMember == null) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Target user is not a member of this universe"));
+                return;
+            }
+            if (targetMember.role == "owner") {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "You cannot change the rank of the universe owner"));
+                return;
+            }
+            membersCollection.updateOne({ user: parsedBody.target, target: parsedBody.universeId }, { $set: { role: parsedBody.rank } });
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(sendResponse(true, {
+                universeId: parsedBody.universeId,
+                target: parsedBody.target,
+                rank: parsedBody.rank
+            }));
+        })
+    } else if (clearUrl == "/api/room/kick" && req.method == 'POST') {
+        let body = '';
+        req.on('data', async (data) => {
+            body += data.toString();
+        })
+        req.on('end', async () => {
+            let parsedBody: any;
+            try {
+                parsedBody = JSON.parse(body);
+            } catch (e) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid JSON"));
+                return;
+            }
+            if (parsedBody.protocol != PROT_NAME) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Unknown protocol"));
+                return
+            }
+            if (parsedBody.protocolVersion != PROT_VER) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Unsupported protocol version"));
+                return;
+            }
+            if (parsedBody.token == undefined || typeof parsedBody.token != "string") {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid token"));
+                return;
+            }
+            if (parsedBody.roomId == undefined || typeof parsedBody.roomId != "string" || !parsedBody.roomId.startsWith("#")) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid room ID"));
+                return;
+            }
+            if (parsedBody.target == undefined || typeof parsedBody.target != "string" || !parsedBody.target.startsWith("@")) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid target ID"));
+                return;
+            }
+            const collection = db.collection("users");
+            const user = await collection.findOne({ token: parsedBody.token });
+            if (user == null) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid token"));
+                return;
+            }
+            if (user.suspended) {
+                res.writeHead(403, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "User is suspended"));
+                return;
+            }
+            collection.updateOne({ token: user.token }, { $set: { lastCommunication: new Date(), lastIP: ip } })
+            const membersCollection = db.collection("members");
+            const roomsCollection = db.collection("rooms");
+            const room = await roomsCollection.findOne({ id: parsedBody.roomId });
+            if (room == null || room.deleted) {
+                res.writeHead(404, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Room not found"));
+                return;
+            }
+            if (room.universeId != "&0") {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "You cannot kick in a room in a universe, use /api/universe/setRank instead"));
+                return;
+            }
+            const member = await membersCollection.findOne({ user: user.username, target: parsedBody.roomId });
+            if (member == null || !member.accepted) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "You are not a member of this room"));
+                return;
+            }
+            if (member.role != "owner" && member.role != "admin" && member.role != "moderator") {
+                res.writeHead(403, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Permission denied"));
+                return;
+            }
+            const targetMember = await membersCollection.findOne({ user: parsedBody.target, target: parsedBody.roomId });
+            if (targetMember == null) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Target user is not a member of this room"));
+                return;
+            }
+            if (targetMember.role == "owner") {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "You cannot kick the room owner"));
+                return;
+            }
+            membersCollection.deleteOne({ user: parsedBody.target, target: parsedBody.roomId });
+            const roomKeys = db.collection("roomKeys");
+            roomKeys.deleteOne({ user: parsedBody.target, roomId: parsedBody.roomId });
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(sendResponse(true, {
+                roomId: parsedBody.roomId,
+                target: parsedBody.target
+            }));
+            await transmitToUser(parsedBody.target, JSON.stringify({
+                type: "roomDelete",
+                protocol: PROT_NAME,
+                protocolVersion: PROT_VER,
+                roomId: parsedBody.roomId
+            }))
+        })
+    } else if (clearUrl == "/api/universe/kick" && req.method == 'POST') {
+        let body = '';
+        req.on('data', async (data) => {
+            body += data.toString();
+        })
+        req.on('end', async () => {
+            let parsedBody: any;
+            try {
+                parsedBody = JSON.parse(body);
+            } catch (e) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid JSON"));
+                return;
+            }
+            if (parsedBody.protocol != PROT_NAME) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Unknown protocol"));
+                return
+            }
+            if (parsedBody.protocolVersion != PROT_VER) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Unsupported protocol version"));
+                return;
+            }
+            if (parsedBody.token == undefined || typeof parsedBody.token != "string") {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid token"));
+                return;
+            }
+            if (parsedBody.universeId == undefined || typeof parsedBody.universeId != "string" || !parsedBody.universeId.startsWith("&")) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid universe ID"));
+                return;
+            }
+            if (parsedBody.target == undefined || typeof parsedBody.target != "string" || !parsedBody.target.startsWith("@")) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid target ID"));
+                return;
+            }
+            const collection = db.collection("users");
+            const user = await collection.findOne({ token: parsedBody.token });
+            if (user == null) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid token"));
+                return;
+            }
+            if (user.suspended) {
+                res.writeHead(403, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "User is suspended"));
+                return;
+            }
+            collection.updateOne({ token: user.token }, { $set: { lastCommunication: new Date(), lastIP: ip } })
+            const membersCollection = db.collection("members");
+            const universesCollection = db.collection("universes");
+            const universe = await universesCollection.findOne({ id: parsedBody.universeId });
+            if (universe == null || universe.deleted) {
+                res.writeHead(404, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Universe not found"));
+                return;
+            }
+            const member = await membersCollection.findOne({ user: user.username, target: parsedBody.universeId });
+            if (member == null || !member.accepted) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "You are not a member of this universe"));
+                return;
+            }
+            if (member.role != "owner" && member.role != "admin" && member.role != "moderator") {
+                res.writeHead(403, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Permission denied"));
+                return;
+            }
+            const targetMember = await membersCollection.findOne({ user: parsedBody.target, target: parsedBody.universeId });
+            if (targetMember == null) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Target user is not a member of this universe"));
+                return;
+            }
+            if (targetMember.role == "owner") {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "You cannot kick the universe owner"));
+                return;
+            }
+            membersCollection.deleteOne({ user: parsedBody.target, target: parsedBody.universeId });
+            const universeKeys = db.collection("universeKeys");
+            universeKeys.deleteOne({ user: parsedBody.target, universeId: parsedBody.universeId });
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(sendResponse(true, {
+                universeId: parsedBody.universeId,
+                target: parsedBody.target
+            }));
+            await transmitToUser(parsedBody.target, JSON.stringify({
+                type: "universeDelete",
+                protocol: PROT_NAME,
+                protocolVersion: PROT_VER,
+                universeId: parsedBody.universeId
+            }))
         })
     } else {
         res.writeHead(404, { 'Content-Type': 'application/json' });

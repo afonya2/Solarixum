@@ -62,6 +62,7 @@
     let ourRole = ref('member');
     let inviteAccepted = ref(false);
     let usercache: any = {}
+    let leaveOpen = ref(false);
 
     async function getUserInfo(username: string) {
         if (usercache[username]) {
@@ -1287,6 +1288,39 @@
         toast.add({ severity: 'success', summary: 'Success', detail: 'Invite denied!', life: 3000 });
         getUniverses()
     }
+    async function leave() {
+        let bdy: any = {
+            token: localStorage.getItem("token"),
+            protocol: PROT_NAME,
+            protocolVersion: PROT_VER,
+        }
+        if (selectedUniverse.value == -1) {
+            bdy.roomId = rooms.value[selectedRoom.value].id;
+        } else {
+            bdy.universeId = universes.value[selectedUniverse.value].id;
+        }
+        let req = await fetch(selectedUniverse.value == -1 ? "/api/room/leave" : "/api/universe/leave", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify(bdy)
+        });
+        let res = await req.json();
+        if (!res.ok) {
+            if (res.error === "Invalid token") {
+                localStorage.setItem("state", "1")
+                window.location.href = "";
+                return
+            }
+            toast.add({ severity: 'error', summary: 'Error', detail: res.error || "An unknown error occurred.", life: 3000 });
+            return;
+        }
+        console.log(res);
+        toast.add({ severity: 'success', summary: 'Success', detail: 'Left successfully!', life: 3000 });
+        leaveOpen.value = false;
+        getUniverses()
+    }
     getUniverses()
     connectWs()
     getOwnInfo()
@@ -1307,7 +1341,7 @@
                 <Button style="width: fit-content;margin-left: auto;" @click="createUniverse()">Create</Button>
             </div>
         </Dialog>
-        <Dialog v-model:visible="inviteModal" modal :header="`Invite to '${selectedRoom < rooms.length ? (selectedUniverse == -1 ? rooms[selectedRoom].label : universes[selectedUniverse].label) : 'Loading...'}'`" style="width: fit-content;">
+        <Dialog v-model:visible="inviteModal" modal :header="`Invite to '${selectedUniverse == -1 ? (selectedRoom < rooms.length ? rooms[selectedRoom].label :'Loading...') : universes[selectedUniverse].label}'`" style="width: fit-content;">
             <div class="flex flex-col gap-4">
                 <InputText type="text" placeholder="Username" style="width: 400px" @keypress.enter = "inviteUser()" v-model="inviteName" />
                 <Button style="width: fit-content;margin-left: auto;" @click="inviteUser()">Invite</Button>
@@ -1319,9 +1353,16 @@
                 <Button style="width: fit-content;margin-left: auto;" @click="editMessage()">Save</Button>
             </div>
         </Dialog>
-        <Dialog v-model:visible="showMembers" modal :header="`Members of '${selectedRoom < rooms.length ? (selectedUniverse == -1 ? rooms[selectedRoom].label : universes[selectedUniverse].label) : 'Loading...'}'`" style="width: 25%;min-width: fit-content;max-height: 25%;overflow: auto;">
+        <Dialog v-model:visible="showMembers" modal :header="`Members of '${selectedUniverse == -1 ? (selectedRoom < rooms.length ? rooms[selectedRoom].label :'Loading...') : universes[selectedUniverse].label}'`" style="width: 25%;min-width: fit-content;max-height: 25%;overflow: auto;">
             <div class="flex flex-col gap-4">
-                <UserCard v-for="member in roomMembers" :label="member.username" :icon="member.icon" :rank="member.rank" @click="selectMember(member.username)" />
+                <UserCard v-for="member in roomMembers" :label="member.username" :icon="member.icon" :rank="member.rank" @click="selectMember(member.username)" :our-role="ourRole" :target-id="selectedUniverse == -1 ? rooms[selectedRoom].id : universes[selectedUniverse].id" :is-room="selectedUniverse == -1" />
+            </div>
+        </Dialog>
+        <Dialog v-model:visible="leaveOpen" modal :header="`Leave '${selectedUniverse == -1 ? (selectedRoom < rooms.length ? rooms[selectedRoom].label :'Loading...') : universes[selectedUniverse].label}'?`" style="width: fit-content;">
+            <p class="mb-2">You will need an invite to join back!<br>Your messages won't be deleted!</p>
+            <div class="flex gap-4">
+                <Button class="ml-auto" @click="leaveOpen = false">Cancel</Button>
+                <Button @click="leave()" severity="danger">Leave</Button>
             </div>
         </Dialog>
         <Dialog v-model:visible="userModal" modal :header="`Profile of '${userInfo.username.substring(1)}'`" style="width: fit-content;">
@@ -1349,9 +1390,10 @@
             <div class="content-head">
                 <h2 class="text-2xl">{{ selectedUniverse < universes.length ? (selectedUniverse == -1 ? "Home" : universes[selectedUniverse].label) : "Loading..." }}</h2>
                 <Button class="btn ml-5" @click="universeSettings = true" v-if="(selectedUniverse != -1) && (ourRole == 'owner' || ourRole == 'admin')"><span class="material-symbols-rounded align-middle text-slate-300">settings</span></Button>
-                <Button class="btn ml-auto" @click="inviteModal = true" v-if="rooms.length > selectedRoom"><span class="material-symbols-rounded align-middle text-slate-300">person_add</span></Button>
+                <Button class="btn ml-auto" @click="inviteModal = true" v-if="rooms.length > selectedRoom || selectedUniverse != -1"><span class="material-symbols-rounded align-middle text-slate-300">person_add</span></Button>
                 <Button class="btn" @click="showMembers = true" v-if="rooms.length > selectedRoom"><span class="material-symbols-rounded align-middle text-slate-300">group</span></Button>
                 <Button class="btn" @click="channelSettings = true" v-if="rooms.length > selectedRoom && (ourRole=='owner' || ourRole == 'admin')"><span class="material-symbols-rounded align-middle text-slate-300">settings</span></Button>
+                <Button class="btn" @click="leaveOpen = true" v-if="(rooms.length > selectedRoom || selectedUniverse != -1) && ourRole != 'owner'"><span class="material-symbols-rounded align-middle text-red-800">logout</span></Button>
             </div>
             <div class="room-select overflow-auto">
                 <div class="flex items-center mb-4">
