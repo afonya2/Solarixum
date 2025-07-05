@@ -49,7 +49,12 @@
       </section>
 
       <section>
-        <h2>7. Contact</h2>
+        <h2>7. Account Suspension</h2>
+        <p>Misusing the platform can result in a permanent suspension of your account. We reserve the right to interpret these rules and may suspend your account at any time for any reason, with or without prior notice.</p>
+      </section>
+
+      <section>
+        <h2>8. Contact</h2>
         <p>If you have any questions about these terms or your data, please check the source code <a href="https://github.com/afonya2/Solarixum">here</a></p>
       </section>
     </div>

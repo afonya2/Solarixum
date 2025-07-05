@@ -9,6 +9,7 @@ import Recovery from './components/Recovery.vue';
 import Register from './components/Register.vue';
 import { ToastService } from 'primevue';
 import Terms from './components/Terms.vue';
+import Showcase from './components/Showcase.vue';
 
 const Preset = definePreset(Aura, {
     semantic: {
@@ -47,6 +48,9 @@ let state = localStorage.getItem('state');
 if (window.location.pathname.includes('/terms')) {
     app = createApp(Terms);
     document.title = "Solarixum - Terms of Service";
+} else if (window.location.pathname == '/showcase') { //Set this to '/' when compiling
+    app = createApp(Showcase);
+    document.title = "Solarixum";
 } else {
     if (state == "5") {
         app = createApp(App);

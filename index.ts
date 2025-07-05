@@ -184,9 +184,9 @@ const httpServer = http.createServer(async (req, res) => {
         return;
     }
     if (clearUrl == "/") {
-        res.writeHead(301, { 'Location': '/client/' });
-        res.end();
-        return;
+        res.writeHead(200, { 'Content-Type': 'text/html' });
+        res.end(fs.readFileSync("./client/index.html"));
+        return
     }
     if (clearUrl == "/version" && req.method === 'GET') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
