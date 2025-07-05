@@ -184,7 +184,7 @@ const httpServer = http.createServer(async (req, res) => {
         return;
     }
     if (clearUrl == "/") {
-        res.writeHead(200, { 'Content-Type': 'text/html' });
+        res.writeHead(200, { 'Content-Type': 'text/html', 'cache-control': 'max-age=86400' });
         res.end(fs.readFileSync("./client/index.html"));
         return
     }
