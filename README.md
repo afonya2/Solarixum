@@ -11,6 +11,7 @@ An end-to-end encrypted chat platform.
 
 ### Database setup
 - Collections inside a DB:
+  - inviteLinks
   - members
   - messages
   - roomKeys
