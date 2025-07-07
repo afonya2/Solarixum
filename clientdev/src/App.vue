@@ -3,7 +3,7 @@
     import ChatMessage from './components/ChatMessage.vue';
     import RoomButton from './components/RoomButton.vue';
     import UniverseButton from './components/UniverseButton.vue';
-    import { Divider, Toast, useToast, InputText, Dialog, Button, type ToastMessageOptions } from 'primevue';
+    import { Divider, Toast, useToast, InputText, Dialog, Button, Message, type ToastMessageOptions } from 'primevue';
     import utils from './utils';
     import plussvg from './assets/plus.svg';
     import UserCard from './components/UserCard.vue';
@@ -63,6 +63,7 @@
     let inviteAccepted = ref(false);
     let usercache: any = {}
     let leaveOpen = ref(false);
+    let inviteLink = ref("");
 
     async function getUserInfo(username: string) {
         if (usercache[username]) {
@@ -1321,9 +1322,254 @@
         leaveOpen.value = false;
         getUniverses()
     }
+    async function createInviteLink() {
+        const token = localStorage.getItem("token");
+        if (!token) {
+            localStorage.setItem("state", "1")
+            window.location.href = "";
+            return;
+        }
+        if (rooms.value.length <= selectedRoom.value) {
+            toast.add({ severity: 'error', summary: 'Error', detail: "No room selected.", life: 3000 });
+            return;
+        }
+        const roomId = rooms.value[selectedRoom.value].id;
+
+        let req2 = await fetch(`/api/room/getKey?roomId=${encodeURIComponent(roomId)}`, {
+            method: "GET",
+            headers: {
+                Authorization: token,
+                protocol: PROT_NAME,
+                "protocol-version": PROT_VER,
+            },
+        })
+        let res2 = await req2.json();
+        if (!res2.ok) {
+            if (res2.error === "Invalid token") {
+                localStorage.setItem("state", "1")
+                window.location.href = "";
+                return
+            }
+            toast.add({ severity: 'error', summary: 'Error', detail: res2.error || "An unknown error occurred.", life: 3000 });
+            return;
+        }
+        
+        const privateKey = await utils.decryptPrivateKey()
+        if (!privateKey) {
+            localStorage.setItem("state", "1")
+            window.location.href = "";
+            return;
+        }
+        let decryptedKey
+        let decryptedIv
+        try {
+            decryptedKey = await crypto.subtle.decrypt(
+                {
+                    name: "RSA-OAEP",
+                },
+                privateKey,
+                utils.base64ToArray(res2.body.key)
+            );
+            decryptedIv = await crypto.subtle.decrypt(
+                {
+                    name: "RSA-OAEP",
+                },
+                privateKey,
+                utils.base64ToArray(res2.body.iv)
+            );
+        } catch (e) {
+            toast.add({ severity: 'error', summary: 'Error', detail: "Failed to decrypt the room key.", life: 3000 });
+            return;
+        }
+        
+        const password = utils.generateRandomString(32);
+        const passKey = await crypto.subtle.importKey(
+            "raw",
+            new TextEncoder().encode(password),
+            { name: "AES-CBC" },
+            false,
+            ["encrypt", "decrypt"]
+        );
+        const iv = crypto.getRandomValues(new Uint8Array(16));
+
+        let encryptedRoomKey
+        let encryptedIv
+        try {
+            encryptedRoomKey = await crypto.subtle.encrypt(
+                {
+                    name: "AES-CBC",
+                    iv: iv,
+                },
+                passKey,
+                decryptedKey
+            );
+            encryptedIv = await crypto.subtle.encrypt(
+                {
+                    name: "AES-CBC",
+                    iv: iv,
+                },
+                passKey,
+                decryptedIv
+            );
+        } catch (e) {
+            toast.add({ severity: 'error', summary: 'Error', detail: "Failed to encrypt the room key for.", life: 3000 });
+            return;
+        }
+
+        let req3 = await fetch("/api/invite/create", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+                token,
+                roomId,
+                key: utils.dataToBase64(encryptedRoomKey),
+                iv: utils.dataToBase64(encryptedIv),
+                protocol: PROT_NAME,
+                protocolVersion: PROT_VER
+            }),
+        });
+        let res3 = await req3.json();
+        if (!res3.ok) {
+            if (res3.error === "Invalid token") {
+                localStorage.setItem("state", "1")
+                window.location.href = "";
+                return
+            }
+            toast.add({ severity: 'error', summary: 'Error', detail: res3.error || "An unknown error occurred.", life: 3000 });
+            return;
+        }
+        toast.add({ severity: 'success', summary: 'Success', detail: 'Invite link created and copied to clipboard!', life: 3000 });
+        inviteLink.value = `${window.location.origin}/client/invite?code=${encodeURIComponent(res3.body.inviteCode)}&password=${encodeURIComponent(password)}&iv=${encodeURIComponent(utils.dataToBase64(iv))}`
+        navigator.clipboard.writeText(inviteLink.value);
+    }
+    async function checkAndAcceptInvite() {
+        if (!window.location.pathname.endsWith("/invite")) return;
+        const urlParams = new URLSearchParams(window.location.search);
+        const inviteCode = urlParams.get("code");
+        const password = urlParams.get("password");
+        const iv = urlParams.get("iv");
+        if (!inviteCode || !password || !iv) {
+            toast.add({ severity: 'error', summary: 'Error', detail: "Invalid invite link.", life: 3000 });
+            return;
+        }
+
+        let userReq = await fetch("/api/me", {
+            method: "GET",
+            headers: {
+                'authorization': localStorage.getItem('token') || "",
+                'protocol': PROT_NAME,
+                'protocol-version': PROT_VER
+            }
+        });
+        let userRes = await userReq.json();
+        if (!userRes.ok) {
+            if (userRes.error === "Invalid token") {
+                localStorage.setItem("state", "1")
+                window.location.href = "";
+                return
+            }
+            toast.add({ severity: 'error', summary: 'Error', detail: userRes.error || "An unknown error occurred.", life: 3000 });
+            return;
+        }
+        let inviteInfoReq = await fetch(`/api/invite/check?code=${encodeURIComponent(inviteCode)}`, {
+            method: "GET",
+            headers: {
+                'authorization': localStorage.getItem('token') || "",
+                'protocol': PROT_NAME,
+                'protocol-version': PROT_VER
+            }
+        });
+        let inviteInfoRes = await inviteInfoReq.json();
+        if (!inviteInfoRes.ok) {
+            if (inviteInfoRes.error === "Invalid token") {
+                localStorage.setItem("state", "1")
+                window.location.href = "";
+                return
+            }
+            toast.add({ severity: 'error', summary: 'Error', detail: inviteInfoRes.error || "An unknown error occurred.", life: 3000 });
+            return;
+        }
+        let encryptedRoomKey
+        let encryptedIv
+        try {
+            const publicKey = await crypto.subtle.importKey(
+                "spki",
+                utils.base64ToData(userRes.body.publicKey),
+                {
+                    name: "RSA-OAEP",
+                    hash: "SHA-256",
+                },
+                false,
+                ["encrypt"]
+            )
+            const passKey = await crypto.subtle.importKey(
+                "raw",
+                new TextEncoder().encode(password),
+                { name: "AES-CBC" },
+                false,
+                ["encrypt", "decrypt"]
+            );
+            const decryptedKey = await crypto.subtle.decrypt(
+                {
+                    name: "AES-CBC",
+                    iv: utils.base64ToData(iv),
+                },
+                passKey,
+                utils.base64ToData(inviteInfoRes.body.key)
+            );
+            const decryptedIv = await crypto.subtle.decrypt(
+                {
+                    name: "AES-CBC",
+                    iv: utils.base64ToData(iv),
+                },
+                passKey,
+                utils.base64ToData(inviteInfoRes.body.iv)
+            );
+            encryptedRoomKey = await crypto.subtle.encrypt({
+                name: "RSA-OAEP",
+            }, publicKey, decryptedKey);
+            encryptedIv = await crypto.subtle.encrypt({
+                name: "RSA-OAEP",
+            }, publicKey, decryptedIv);
+        } catch (e) {
+            console.error("Failed to process invite:", e);
+            toast.add({ severity: 'error', summary: 'Error', detail: "Failed to process invite.", life: 3000 });
+            return
+        }
+        let req = await fetch("/api/invite/accept", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+                token: localStorage.getItem("token"),
+                code: inviteCode,
+                key: utils.dataToBase64(encryptedRoomKey),
+                iv: utils.dataToBase64(encryptedIv),
+                protocol: PROT_NAME,
+                protocolVersion: PROT_VER
+            }),
+        });
+        let res = await req.json();
+        if (!res.ok) {
+            if (res.error === "Invalid token") {
+                localStorage.setItem("state", "1")
+                window.location.href = "";
+                return
+            }
+            toast.add({ severity: 'error', summary: 'Error', detail: res.error || "An unknown error occurred.", life: 3000 });
+            return;
+        }
+        console.log(res);
+        toast.add({ severity: 'success', summary: 'Success', detail: 'Invite accepted!', life: 3000 });
+        window.history.pushState({}, '', '/client/');
+    }
     getUniverses()
     connectWs()
     getOwnInfo()
+    checkAndAcceptInvite()
 </script>
 
 <template>
@@ -1343,8 +1589,12 @@
         </Dialog>
         <Dialog v-model:visible="inviteModal" modal :header="`Invite to '${selectedUniverse == -1 ? (selectedRoom < rooms.length ? rooms[selectedRoom].label :'Loading...') : universes[selectedUniverse].label}'`" style="width: fit-content;">
             <div class="flex flex-col gap-4">
-                <InputText type="text" placeholder="Username" style="width: 400px" @keypress.enter = "inviteUser()" v-model="inviteName" />
-                <Button style="width: fit-content;margin-left: auto;" @click="inviteUser()">Invite</Button>
+                <Message severity="success" v-if="inviteLink.length > 0"><p>Invite link created, and copied to your clipboard: {{ inviteLink }}<br>It expires in 24 hours!<br>You can't check it again!</p></Message>
+                <InputText type="text" placeholder="Username" style="min-width: 400px" @keypress.enter = "inviteUser()" v-model="inviteName" />
+                <div class="flex">
+                    <Button style="width: fit-content;margin-left: auto;" @click="createInviteLink()">Create invite link</Button>
+                    <Button class="ml-2" style="width: fit-content;" @click="inviteUser()">Invite</Button>
+                </div>
             </div>
         </Dialog>
         <Dialog v-model:visible="editMessageModal" modal header="Edit message" style="width: fit-content;">
@@ -1390,7 +1640,7 @@
             <div class="content-head">
                 <h2 class="text-2xl">{{ selectedUniverse < universes.length ? (selectedUniverse == -1 ? "Home" : universes[selectedUniverse].label) : "Loading..." }}</h2>
                 <Button class="btn ml-5" @click="universeSettings = true" v-if="(selectedUniverse != -1) && (ourRole == 'owner' || ourRole == 'admin')"><span class="material-symbols-rounded align-middle text-slate-300">settings</span></Button>
-                <Button class="btn ml-auto" @click="inviteModal = true" v-if="rooms.length > selectedRoom || selectedUniverse != -1"><span class="material-symbols-rounded align-middle text-slate-300">person_add</span></Button>
+                <Button class="btn ml-auto" @click="inviteLink = '';inviteModal = true" v-if="rooms.length > selectedRoom || selectedUniverse != -1"><span class="material-symbols-rounded align-middle text-slate-300">person_add</span></Button>
                 <Button class="btn" @click="showMembers = true" v-if="rooms.length > selectedRoom"><span class="material-symbols-rounded align-middle text-slate-300">group</span></Button>
                 <Button class="btn" @click="channelSettings = true" v-if="rooms.length > selectedRoom && (ourRole=='owner' || ourRole == 'admin')"><span class="material-symbols-rounded align-middle text-slate-300">settings</span></Button>
                 <Button class="btn" @click="leaveOpen = true" v-if="(rooms.length > selectedRoom || selectedUniverse != -1) && ourRole != 'owner'"><span class="material-symbols-rounded align-middle text-red-800">logout</span></Button>

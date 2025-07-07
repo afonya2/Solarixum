@@ -1439,6 +1439,7 @@ const httpServer = http.createServer(async (req, res) => {
         }
         res.end(sendResponse(true, {
             username: user.username,
+            publicKey: user.publicKey,
             createdAt: user.createdAt,
             bio: user.bio,
             icon: user.icon
@@ -1951,6 +1952,47 @@ const httpServer = http.createServer(async (req, res) => {
             await membersCollection.deleteMany({ user: user.username });
             await keyCollection.deleteMany({ user: user.username });
             await universeKeysCollection.deleteMany({ user: user.username });
+            if (config.welcomeRoom != undefined && config.welcomeRoomKey != undefined && config.welcomeRoomIv != undefined && config.welcomeRoom.length > 0 && config.welcomeRoomKey.length > 0 && config.welcomeRoomIv.length > 0) {
+                const roomCollection = db.collection("rooms");
+                const room = await roomCollection.findOne({ id: config.welcomeRoom });
+                if (room == null || room.deleted) {
+                    res.writeHead(200, { 'Content-Type': 'application/json' });
+                    res.end(sendResponse(true, {
+                        username: parsedBody.username,
+                        token: token
+                    }));
+                    return
+                }
+                try {
+                    let encryptedKey = crypto.publicEncrypt({
+                        key: base64ToPem(parsedBody.publicKey),
+                        padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
+                        oaepHash: 'sha256'
+                    }, Buffer.from(config.welcomeRoomKey, 'base64')).toString("base64");
+                    let encryptedIv = crypto.publicEncrypt({
+                        key: base64ToPem(parsedBody.publicKey),
+                        padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
+                        oaepHash: 'sha256'
+                    }, Buffer.from(config.welcomeRoomIv, 'base64')).toString("base64");
+                    membersCollection.insertOne({
+                        user: "@"+parsedBody.username,
+                        target: room.id,
+                        nick: "",
+                        role: "member",
+                        joinedAt: new Date(),
+                        accepted: false
+                    })
+                    keyCollection.insertOne({
+                        user: "@"+parsedBody.username,
+                        roomId: room.id,
+                        key: encryptedKey,
+                        iv: encryptedIv,
+                        createdAt: new Date()
+                    })
+                } catch (e) {
+                    console.error(`Failed to invite: ${'@'+parsedBody.username} to the welcome room! Error: ${e}`);
+                }
+            }
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(sendResponse(true, {
                 username: parsedBody.username,
@@ -3319,6 +3361,324 @@ const httpServer = http.createServer(async (req, res) => {
                 protocolVersion: PROT_VER,
                 universeId: parsedBody.universeId
             }))
+        })
+    } else if (clearUrl == "/api/invite/create" && req.method === 'POST') {
+        let body = '';
+        req.on('data', async (data) => {
+            body += data.toString();
+        })
+        req.on('end', async () => {
+            let parsedBody: any;
+            try {
+                parsedBody = JSON.parse(body);
+            } catch (e) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid JSON"));
+                return;
+            }
+            if (parsedBody.protocol != PROT_NAME) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Unknown protocol"));
+                return
+            }
+            if (parsedBody.protocolVersion != PROT_VER) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Unsupported protocol version"));
+                return;
+            }
+            if (parsedBody.token == undefined || typeof parsedBody.token != "string") {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid token"));
+                return;
+            }
+            if (parsedBody.roomId == undefined || typeof parsedBody.roomId != "string" || !parsedBody.roomId.startsWith("#")) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid room ID"));
+                return;
+            }
+            if (parsedBody.key == undefined || typeof parsedBody.key != "string") {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid key"));
+                return;
+            }
+            if (parsedBody.iv == undefined || typeof parsedBody.iv != "string") {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid IV"));
+                return;
+            }
+            const collection = db.collection("users");
+            const user = await collection.findOne({ token: parsedBody.token });
+            if (user == null) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid token"));
+                return;
+            }
+            if (user.suspended) {
+                res.writeHead(403, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "User is suspended"));
+                return;
+            }
+            collection.updateOne({ token: user.token }, { $set: { lastCommunication: new Date(), lastIP: ip } })
+            const roomsCollection = db.collection("rooms");
+            const membersCollection = db.collection("members");
+            let room = await roomsCollection.findOne({ id: parsedBody.roomId });
+            if (room == null || room.deleted) {
+                res.writeHead(404, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Room not found"));
+                return;
+            }
+            if (room.universeId != "&0") {
+                const universeCollection = db.collection("universes");
+                const universe = await universeCollection.findOne({ id: room.universeId });
+                if (universe == null || universe.deleted) {
+                    res.writeHead(404, { 'Content-Type': 'application/json' });
+                    res.end(sendResponse(false, null, "Universe not found"));
+                    return;
+                }
+                const member = await membersCollection.findOne({ user: user.username, target: room.universeId });
+                if (member == null || !member.accepted) {
+                    res.writeHead(403, { 'Content-Type': 'application/json' });
+                    res.end(sendResponse(false, null, "User is not member of this universe"));
+                    return;
+                }
+            } else {
+                const member = await membersCollection.findOne({ user: user.username, target: room.id });
+                if (member == null || !member.accepted) {
+                    res.writeHead(403, { 'Content-Type': 'application/json' });
+                    res.end(sendResponse(false, null, "User is not member of this room"));
+                    return;                    
+                }
+            }
+            const inviteCollection = db.collection("inviteLinks");
+            const inviteCode = "*"+ulid();
+            inviteCollection.insertOne({
+                targetId: room.universeId != "&0" ? room.universeId : room.id,
+                creator: user.username,
+                code: inviteCode,
+                key: parsedBody.key,
+                iv: parsedBody.iv,
+                createdAt: new Date(),
+                expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000)
+            })
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(sendResponse(true, {
+                inviteCode: inviteCode,
+                roomId: room.id
+            }));
+        })
+    } else if (clearUrl == "/api/invite/check" && req.method == 'GET') {
+        if (req.headers["protocol"] != PROT_NAME) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(sendResponse(false, null, "Unknown protocol"));
+            return;
+        }
+        if (req.headers["protocol-version"] != PROT_VER) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(sendResponse(false, null, "Unsupported protocol version"));
+            return;
+        }
+        if (args.code == undefined || typeof args.code != "string" || !decodeURIComponent(args.code).startsWith("*")) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(sendResponse(false, null, "Invalid invite code"));
+            return;
+        }
+        const collection = db.collection("users");
+        const user = await collection.findOne({ token: req.headers["authorization"] });
+        if (user == null) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(sendResponse(false, null, "Invalid token"));
+            return;
+        }
+        if (user.suspended) {
+            res.writeHead(403, { 'Content-Type': 'application/json' });
+            res.end(sendResponse(false, null, "User is suspended"));
+            return;
+        }
+        collection.updateOne({ token: user.token }, { $set: { lastCommunication: new Date(), lastIP: ip } })
+        const inviteCollection = db.collection("inviteLinks");
+        const invite = await inviteCollection.findOne({ code: decodeURIComponent(args.code) });
+        if (invite == null) {
+            res.writeHead(404, { 'Content-Type': 'application/json' });
+            res.end(sendResponse(false, null, "Invite not found"));
+            return;
+        }
+        if (invite.expiresAt.getTime() < Date.now()) {
+            res.writeHead(410, { 'Content-Type': 'application/json' });
+            res.end(sendResponse(false, null, "Invite expired"));
+            return;
+        }
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(sendResponse(true, {
+            inviteCode: invite.code,
+            targetId: invite.targetId,
+            key: invite.key,
+            iv: invite.iv
+        }));
+    } else if (clearUrl == "/api/invite/accept" && req.method === 'POST') {
+        let body = '';
+        req.on('data', async (data) => {
+            body += data.toString();
+        })
+        req.on('end', async () => {
+            let parsedBody: any;
+            try {
+                parsedBody = JSON.parse(body);
+            } catch (e) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid JSON"));
+                return;
+            }
+            if (parsedBody.protocol != PROT_NAME) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Unknown protocol"));
+                return
+            }
+            if (parsedBody.protocolVersion != PROT_VER) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Unsupported protocol version"));
+                return;
+            }
+            if (parsedBody.token == undefined || typeof parsedBody.token != "string") {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid token"));
+                return;
+            }
+            if (parsedBody.code == undefined || typeof parsedBody.code != "string" || !parsedBody.code.startsWith("*")) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid invite code"));
+                return;                
+            }
+            if (parsedBody.key == undefined || typeof parsedBody.key != "string") {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid key"));
+                return;
+            }
+            if (parsedBody.iv == undefined || typeof parsedBody.iv != "string") {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid IV"));
+                return;
+            }
+            const collection = db.collection("users");
+            const user = await collection.findOne({ token: parsedBody.token });
+            if (user == null) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invalid token"));
+                return;
+            }
+            if (user.suspended) {
+                res.writeHead(403, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "User is suspended"));
+                return;
+            }
+            collection.updateOne({ token: user.token }, { $set: { lastCommunication: new Date(), lastIP: ip } })
+            const inviteCollection = db.collection("inviteLinks");
+            const invite = await inviteCollection.findOne({ code: parsedBody.code });
+            if (invite == null) {
+                res.writeHead(404, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invite not found"));
+                return;
+            }
+            if (invite.expiresAt.getTime() < Date.now()) {
+                res.writeHead(410, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(false, null, "Invite expired"));
+                return;
+            }
+            const roomsCollection = db.collection("rooms");
+            const universeCollection = db.collection("universes");
+            const membersCollection = db.collection("members");
+            const roomKeyCollection = db.collection("roomKeys");
+            const universeKeyCollection = db.collection("universeKeys");
+            if (invite.targetId.startsWith("&")) {
+                let universe = await universeCollection.findOne({ id: invite.targetId });
+                if (universe == null || universe.deleted) {
+                    res.writeHead(404, { 'Content-Type': 'application/json' });
+                    res.end(sendResponse(false, null, "Universe not found"));
+                    return;
+                }
+                const member = await membersCollection.findOne({ user: user.username, target: invite.targetId });
+                if (member != null) {
+                    res.writeHead(400, { 'Content-Type': 'application/json' });
+                    res.end(sendResponse(false, null, "You are already a member of this universe"));
+                    return;
+                }
+                membersCollection.insertOne({
+                    user: user.username,
+                    target: universe.id,
+                    nick: "",
+                    role: "member",
+                    joinedAt: new Date(),
+                    accepted: false
+                })
+                universeKeyCollection.insertOne({
+                    user: user.username,
+                    universeId: invite.targetId,
+                    key: parsedBody.key,
+                    iv: parsedBody.iv,
+                    createdAt: new Date()
+                })
+                if (universe.icon == undefined || universe.icon.length == 0) {
+                    universe.icon = null
+                }
+                transmitToUser(user.username, JSON.stringify({
+                    type: "universeInvite",
+                    universeId: universe.id,
+                    universeName: universe.name,
+                    icon: universe.icon,
+                    protocol: PROT_NAME,
+                    protocolVersion: PROT_VER
+                }))
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(true, {
+                    universeId: universe.id
+                }));
+            } else {
+                let room = await roomsCollection.findOne({ id: invite.targetId });
+                if (room == null || room.deleted) {
+                    res.writeHead(404, { 'Content-Type': 'application/json' });
+                    res.end(sendResponse(false, null, "Room not found"));
+                    return;
+                }
+                if (room.universeId != "&0") {
+                    res.writeHead(500, { 'Content-Type': 'application/json' });
+                    res.end(sendResponse(false, null, "Invalid room data."));
+                }
+                const member = await membersCollection.findOne({ user: user.username, target: invite.targetId });
+                if (member != null) {
+                    res.writeHead(400, { 'Content-Type': 'application/json' });
+                    res.end(sendResponse(false, null, "You are already a member of this room"));
+                    return;
+                }
+                membersCollection.insertOne({
+                    user: user.username,
+                    target: room.id,
+                    nick: "",
+                    role: "member",
+                    joinedAt: new Date(),
+                    accepted: false
+                })
+                roomKeyCollection.insertOne({
+                    user: user.username,
+                    roomId: invite.targetId,
+                    key: parsedBody.key,
+                    iv: parsedBody.iv,
+                    createdAt: new Date()
+                })
+                if (room.icon == undefined || room.icon.length == 0) {
+                    room.icon = null
+                }
+                transmitToUser(user.username, JSON.stringify({
+                    type: "roomInvite",
+                    roomId: invite.targetId,
+                    roomName: room.name,
+                    icon: room.icon,
+                    protocol: PROT_NAME,
+                    protocolVersion: PROT_VER
+                }))
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(sendResponse(true, {
+                    roomId: room.id
+                }));
+            }
         })
     } else {
         res.writeHead(404, { 'Content-Type': 'application/json' });
